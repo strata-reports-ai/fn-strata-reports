@@ -1,0 +1,86 @@
+name: Test Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: 'PR number(s) to test — comma-separated'
+        required: true
+        type: string
+      target_repo:
+        description: 'Repo that was deployed (fn-strata-reports or web-strata-reports)'
+        required: true
+        type: string
+        default: 'fn-strata-reports'
+      orchestrator_issues:
+        description: 'Orchestrator issue number(s) — comma-separated'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Build test prompt
+        id: prompt
+        env:
+          PR_NUMBERS: ${{ inputs.pr_numbers }}
+          REPO: ${{ inputs.target_repo }}
+          ISSUE_NUMBERS: ${{ inputs.orchestrator_issues }}
+        run: |
+          python3 scripts/build-test-prompt.py
+          {
+            echo 'value<<QA_PROMPT_DELIMITER'
+            cat /tmp/test-prompt.txt
+            echo 'QA_PROMPT_DELIMITER'
+          } >> "$GITHUB_OUTPUT"
+
+      - id: claude
+        uses: anthropics/claude-code-action@beta
+        env:
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          mode: agent
+          model: claude-sonnet-4-6
+          allowed_tools: Bash,Read,Write,Edit,Glob,Grep
+          timeout_minutes: 45
+          max_turns: 80
+          direct_prompt: ${{ steps.prompt.outputs.value }}
+
+      - name: Handle spending cap
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          ISSUE_NUMBERS: ${{ inputs.orchestrator_issues }}
+        run: |
+          STEP_OUTPUT="${{ steps.claude.outputs.output }}"
+          if ! echo "$STEP_OUTPUT" | grep -q "Spending cap reached"; then exit 0; fi
+          [ -z "$ISSUE_NUMBERS" ] && exit 0
+          RESET_STR=$(echo "$STEP_OUTPUT" | grep -oP 'Spending cap reached resets \K[^\n]+' | head -1)
+          RESET_ISO=$(TZ=America/New_York date -d "${RESET_STR:-+8 hours}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "+8 hours" +%Y-%m-%dT%H:%M:%SZ)
+          IFS=',' read -ra ISSUES_ARR <<< "$ISSUE_NUMBERS"
+          for ISSUE_N in "${ISSUES_ARR[@]}"; do
+            ISSUE_N=$(echo "$ISSUE_N" | tr -d '[:space:]')
+            [ -z "$ISSUE_N" ] && continue
+            GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
+              --repo strata-reports-ai/orchestrator-strata-reports --add-label "cap-wait"
+            GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue comment "$ISSUE_N" \
+              --repo strata-reports-ai/orchestrator-strata-reports \
+              --body "Spending cap reached. RESET_ISO: ${RESET_ISO}"
+          done
