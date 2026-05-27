@@ -1,21 +1,17 @@
-name: Deploy Function App
+name: Deploy API
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
       - main
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -70,15 +66,24 @@ jobs:
             "AzureWebJobsStorage=${BLOB_CONNECTION_STRING}"
 
       - name: Trigger test agent
-        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          ORCHESTRATOR_ISSUE=$(gh pr view "$PR_NUMBER" --repo strata-reports-ai/fn-strata-reports --json body \
-            --jq '.body' | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+          PR_NUMBER=$(gh pr list --repo strata-reports-ai/fn-strata-reports \
+            --base main --state merged --limit 5 \
+            --json number,mergeCommit \
+            --jq "[.[] | select(.mergeCommit.oid == \"${{ github.sha }}\")] | .[0].number // empty" \
+            2>/dev/null || true)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No merged PR found for this push — skipping test agent"
+            exit 0
+          fi
+          ORCHESTRATOR_ISSUE=$(gh pr view "$PR_NUMBER" --repo strata-reports-ai/fn-strata-reports \
+            --json body --jq '.body' \
+            | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
           jq -n --arg pr "$PR_NUMBER" --arg issue "${ORCHESTRATOR_ISSUE:-}" \
             '{"ref":"main","inputs":{"pr_numbers":$pr,"target_repo":"fn-strata-reports","orchestrator_issues":$issue}}' | \
           gh api repos/strata-reports-ai/fn-strata-reports/actions/workflows/test-agent.yml/dispatches \
             --method POST --input -
+          echo "Triggered test agent for PR #$PR_NUMBER (issue: ${ORCHESTRATOR_ISSUE:-none})"
