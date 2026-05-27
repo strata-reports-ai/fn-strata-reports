@@ -58,7 +58,6 @@ jobs:
       issues: write
       actions: read
       id-token: write
-      workflows: write
     steps:
       - uses: actions/checkout@v4
         with:
