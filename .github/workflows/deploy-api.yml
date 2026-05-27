@@ -1,0 +1,89 @@
+name: Deploy API
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore StrataReports.Functions.csproj
+
+      - name: Build
+        run: dotnet build StrataReports.Functions.csproj --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish StrataReports.Functions.csproj --configuration Release --output ./publish --no-build
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Function App
+        run: |
+          cd publish
+          zip -r ../deploy.zip . -x "*.git*"
+          cd ..
+          az functionapp deployment source config-zip \
+            --resource-group rg-strata-reports-dev \
+            --name fn-strata-reports \
+            --src deploy.zip
+
+      - name: Configure app settings
+        env:
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          POSTMARK_API_KEY: ${{ secrets.POSTMARK_API_KEY }}
+          BLOB_CONNECTION_STRING: ${{ secrets.BLOB_CONNECTION_STRING }}
+        run: |
+          az functionapp config appsettings set \
+            --resource-group rg-strata-reports-dev \
+            --name fn-strata-reports \
+            --settings \
+            "ConnectionStrings__Database=Host=psql-strata-reports-dev.postgres.database.azure.com;Database=stratareports;Username=stratareportadmin;Password=${POSTGRES_ADMIN_PASSWORD};SSL Mode=Require" \
+            "Anthropic__ApiKey=${ANTHROPIC_API_KEY}" \
+            "Stripe__SecretKey=${STRIPE_SECRET_KEY}" \
+            "Stripe__WebhookSecret=${STRIPE_WEBHOOK_SECRET}" \
+            "Entra__ClientId=${ENTRA_CLIENT_ID}" \
+            "Entra__TenantId=${ENTRA_TENANT_ID}" \
+            "Postmark__ApiKey=${POSTMARK_API_KEY}" \
+            "AzureWebJobsStorage=${BLOB_CONNECTION_STRING}"
+
+      - name: Trigger test agent
+        env:
+          GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --repo strata-reports-ai/fn-strata-reports \
+            --base main --state merged --limit 5 \
+            --json number,mergeCommit \
+            --jq "[.[] | select(.mergeCommit.oid == \"${{ github.sha }}\")] | .[0].number // empty" \
+            2>/dev/null || true)
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No merged PR found for this push — skipping test agent"
+            exit 0
+          fi
+          ORCHESTRATOR_ISSUE=$(gh pr view "$PR_NUMBER" --repo strata-reports-ai/fn-strata-reports \
+            --json body --jq '.body' \
+            | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+          jq -n --arg pr "$PR_NUMBER" --arg issue "${ORCHESTRATOR_ISSUE:-}" \
+            '{"ref":"main","inputs":{"pr_numbers":$pr,"target_repo":"fn-strata-reports","orchestrator_issues":$issue}}' | \
+          gh api repos/strata-reports-ai/fn-strata-reports/actions/workflows/test-agent.yml/dispatches \
+            --method POST --input -
+          echo "Triggered test agent for PR #$PR_NUMBER (issue: ${ORCHESTRATOR_ISSUE:-none})"
