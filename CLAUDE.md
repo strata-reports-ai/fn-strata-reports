@@ -48,6 +48,57 @@ Secrets `ENTRA_CLIENT_ID` and `ENTRA_TENANT_ID` will be available as environment
 - Use `IDbConnectionFactory` (Dapper) for read-heavy or raw SQL queries.
 - Never bypass RLS. `TenantMiddleware` must run on all authenticated endpoints.
 
+## Azure Functions isolated worker — middleware registration
+
+This is an **isolated worker** model, NOT ASP.NET Core. The `IHost` object does NOT have `UseMiddleware`, `UseAuthentication`, or `UseAuthorization`. These are ASP.NET Core extension methods on `IApplicationBuilder` and will not compile here.
+
+Middleware is registered inside `ConfigureFunctionsWorkerDefaults`:
+
+```csharp
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults(worker =>
+    {
+        worker.UseMiddleware<TenantMiddleware>();
+    })
+    .ConfigureServices(services => { ... })
+    .Build();
+await host.RunAsync();
+```
+
+Do NOT write:
+```csharp
+var host = builder.Build();
+host.UseMiddleware<TenantMiddleware>(); // CS1929 — will not compile
+host.UseAuthentication();              // CS1929 — will not compile
+```
+
+`IFunctionsWorkerMiddleware` (not `IMiddleware`) is the correct interface for Functions middleware:
+
+```csharp
+public class TenantMiddleware : IFunctionsWorkerMiddleware
+{
+    public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
+    {
+        // set tenant session variable here
+        await next(context);
+    }
+}
+```
+
+To execute raw SQL in middleware, inject `AppDbContext` and call:
+```csharp
+await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", tenantId);
+```
+`ExecuteSqlRawAsync` is an extension on `DatabaseFacade` — requires `using Microsoft.EntityFrameworkCore;`.
+
+`CookieOptions` is a **class** (not a record). Do NOT use `with { }` syntax on it:
+```csharp
+// Wrong:
+var opts = existingOpts with { Expires = DateTimeOffset.UtcNow.AddDays(7) };
+// Correct:
+var opts = new CookieOptions { HttpOnly = true, Secure = true, SameSite = SameSiteMode.Lax, Expires = DateTimeOffset.UtcNow.AddDays(7) };
+```
+
 ## Function conventions
 
 - One HTTP-triggered function class per logical group (e.g. `AuthFunction`, `PropertiesFunction`).
