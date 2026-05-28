@@ -17,6 +17,7 @@ Only use packages that are already declared in `StrataReports.Functions.csproj`.
 - `Dapper` 2.1.66
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`
 - `OpenTelemetry` stack (Azure Monitor exporter)
+- `Microsoft.IdentityModel.Tokens` 8.3.2 + `System.IdentityModel.Tokens.Jwt` 8.3.2 (JWT signing/validation)
 
 **No Postmark, no SendGrid, no ACS — email is not yet wired up.**
 
@@ -112,3 +113,4 @@ var opts = new CookieOptions { HttpOnly = true, Secure = true, SameSite = SameSi
 - Enable nullable: treat all warnings as potential bugs; initialise variables before use.
 - No `var` for non-obvious types. Explicit types on public members.
 - No bare `catch (Exception)` — catch specific exception types.
+
