@@ -75,6 +75,7 @@ public class AuthFunction(
         };
         db.AuditLogs.Add(auditEntry);
 
+        await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", tenant.Id.ToString());
         await db.SaveChangesAsync(ct);
 
         await emailService.SendVerificationEmailAsync(user.Email, verificationToken, ct);
@@ -106,6 +107,7 @@ public class AuthFunction(
 
         if (user is null || string.IsNullOrEmpty(user.PasswordHash) || !passwordValid)
         {
+            await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = '00000000-0000-0000-0000-000000000000'");
             await WriteAuditLog(db, null, null, "login_failed", GetClientIp(req), GetUserAgent(req), ct);
             return await Unauthorized(req, "Invalid email or password.");
         }
@@ -142,6 +144,7 @@ public class AuthFunction(
         };
         db.AuditLogs.Add(auditEntry);
 
+        await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", user.TenantId.ToString());
         await db.SaveChangesAsync(ct);
 
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
@@ -252,6 +255,7 @@ public class AuthFunction(
             };
             db.AuditLogs.Add(auditEntry);
 
+            await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", user.TenantId.ToString());
             await db.SaveChangesAsync(ct);
 
             await emailService.SendPasswordResetEmailAsync(user.Email, plainToken, ct);
@@ -355,6 +359,7 @@ public class AuthFunction(
 
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
+        await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", user.TenantId.ToString());
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation("Email verified for user {UserId}", user.Id);
