@@ -30,23 +30,31 @@ if [ -n "$ISSUE_N" ]; then
     --remove-label in-progress --add-label code-review
 fi
 
-# Guard 2: skip if review cycle is terminal (passed or max retries reached)
-# Exception: if review passed but PR is still open due to merge conflict, dispatch rebase agent.
-TERMINAL_COMMENT=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '[.[] | select(.body | (startswith("✅ **Code review") or startswith("⚠️ Max revision")))] | length' \
+# Guard 2a: truly terminal — max revision cycles reached, needs human review
+MAX_RETRY_COMMENT=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
+  --jq '[.[] | select(.body | startswith("⚠️ Max revision"))] | length' \
   2>/dev/null || echo "0")
-if [ "${TERMINAL_COMMENT:-0}" -gt "0" ]; then
+if [ "${MAX_RETRY_COMMENT:-0}" -gt "0" ]; then
+  echo "PR #${PR_NUMBER} max revision cycles reached — skipping"
+  exit 0
+fi
+
+# Guard 2b: review passed — if PR is still open, attempt to merge or dispatch rebase
+PASSED_COMMENT=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
+  --jq '[.[] | select(.body | startswith("✅ **Code review"))] | length' \
+  2>/dev/null || echo "0")
+if [ "${PASSED_COMMENT:-0}" -gt "0" ]; then
   PR_STATE=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json state --jq '.state' 2>/dev/null || echo "CLOSED")
   if [ "$PR_STATE" != "OPEN" ]; then
-    echo "PR #${PR_NUMBER} review cycle is complete (passed or max retries) — skipping"
+    echo "PR #${PR_NUMBER} already merged — skipping"
     exit 0
   fi
-  # PR still open despite review passing — check for merge conflict
+  # PR still open after review passed — check mergeability (treat UNKNOWN same as CONFLICTING)
   MERGEABLE=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json mergeable --jq '.mergeable' 2>/dev/null || echo "UNKNOWN")
-  if [ "$MERGEABLE" = "CONFLICTING" ]; then
-    echo "PR #${PR_NUMBER} passed review but has merge conflict — dispatching rebase agent"
-    ISSUE_N_R=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json body --jq '.body' \
-      | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+  ISSUE_N_R=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json body --jq '.body' \
+    | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+  if [ "$MERGEABLE" != "MERGEABLE" ]; then
+    echo "PR #${PR_NUMBER} passed review but mergeable=$MERGEABLE — dispatching rebase agent"
     if [ -n "$ISSUE_N_R" ]; then
       GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N_R" \
         --repo strata-reports-ai/orchestrator-strata-reports \
@@ -54,11 +62,11 @@ if [ "${TERMINAL_COMMENT:-0}" -gt "0" ]; then
     fi
     REBASE_PROMPT="REBASE ONLY for ${HEAD_BRANCH} — code already passed review.
 
-Branch ${HEAD_BRANCH} has a merge conflict with main that is blocking automatic merge.
+Branch ${HEAD_BRANCH} needs to be rebased onto main before it can be merged.
 
 Steps:
 1. git fetch origin && git checkout ${HEAD_BRANCH}
-2. git merge origin/main  (resolve any conflicts keeping our implementation intact)
+2. git merge origin/main  (resolve any conflicts keeping our implementation intact — if 'Already up to date', skip step 3)
 3. git push origin ${HEAD_BRANCH}
 4. Then merge the PR and transition the orchestrator issue:
    GH_TOKEN=\"\$GH_DISPATCH_TOKEN\" gh pr merge ${PR_NUMBER} --repo ${PR_REPO} --squash --delete-branch
@@ -71,12 +79,22 @@ Steps:
     GH_TOKEN="$GH_DISPATCH_TOKEN" gh api \
       "repos/${PR_REPO}/actions/workflows/claude-code.yml/dispatches" \
       --method POST --input -
-    echo "Rebase agent dispatched for PR #${PR_NUMBER}"
+    echo "Rebase agent dispatched for PR #${PR_NUMBER} (mergeable=$MERGEABLE)"
     exit 0
   fi
-  echo "PR #${PR_NUMBER} review cycle is complete (passed or max retries) — skipping"
+  # MERGEABLE but PR still open — try to merge directly
+  echo "PR #${PR_NUMBER} passed review and is MERGEABLE but still open — attempting merge"
+  GH_TOKEN="$GH_DISPATCH_TOKEN" gh pr merge "${PR_NUMBER}" --repo "${PR_REPO}" --squash --delete-branch 2>/dev/null || true
+  MERGED_STATE=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json state --jq '.state' 2>/dev/null || echo "OPEN")
+  if [ "$MERGED_STATE" != "OPEN" ] && [ -n "$ISSUE_N_R" ]; then
+    GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N_R" \
+      --repo strata-reports-ai/orchestrator-strata-reports \
+      --remove-label code-review --add-label in-test 2>/dev/null || true
+    echo "Merged PR #${PR_NUMBER} and transitioned issue to in-test"
+  fi
   exit 0
 fi
+
 
 
 cat > /tmp/review-prompt.txt << ENDPROMPT
