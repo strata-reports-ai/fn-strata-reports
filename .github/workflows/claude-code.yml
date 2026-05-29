@@ -91,31 +91,6 @@ jobs:
         id: validate
         run: dotnet build StrataReports.Functions.csproj --configuration Release --no-restore
 
-      - name: Reset issue on build failure
-        if: always() && steps.validate.outcome == 'failure'
-        env:
-          GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
-          BRANCH: ${{ github.event.inputs.branch || 'main' }}
-          PROMPT: ${{ github.event.inputs.prompt || '' }}
-        run: |
-          if echo "$PROMPT" | grep -qEF "You are a code reviewer|REVISION REQUEST for"; then exit 0; fi
-          ISSUE_N=$(echo "$BRANCH" | grep -oP 'feature/issue-\K[0-9]+' || true)
-          [ -z "$ISSUE_N" ] && ISSUE_N=$(echo "$PROMPT" | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
-          [ -z "$ISSUE_N" ] && exit 0
-          RETRY_COUNT=$(GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue view "$ISSUE_N" \
-            --repo strata-reports-ai/orchestrator-strata-reports \
-            --json labels --jq '[.labels[].name | select(startswith("retry-"))] | length' 2>/dev/null || echo "0")
-          NEXT_RETRY=$(( ${RETRY_COUNT:-0} + 1 ))
-          if [ "${RETRY_COUNT:-0}" -ge 3 ]; then
-            GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
-              --repo strata-reports-ai/orchestrator-strata-reports \
-              --remove-label in-progress --add-label agent-failed
-          else
-            GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
-              --repo strata-reports-ai/orchestrator-strata-reports \
-              --remove-label in-progress --add-label ready --add-label "retry-$NEXT_RETRY"
-          fi
-
       - name: Handle spending cap
         if: steps.claude.outcome == 'failure'
         env:
@@ -125,7 +100,7 @@ jobs:
           PROMPT: ${{ github.event.inputs.prompt || '' }}
         run: |
           STEP_OUTPUT="${{ steps.claude.outputs.output }}"
-          if echo "$PROMPT" | grep -qEF "You are a code reviewer|REVISION REQUEST for"; then
+          if echo "$PROMPT" | grep -qF "You are a code reviewer"; then
             echo "Code review agent failure — skipping retry logic"
             exit 0
           fi
@@ -179,7 +154,7 @@ jobs:
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           PROMPT: ${{ github.event.inputs.prompt || '' }}
         run: |
-          if echo "$PROMPT" | grep -qEF "You are a code reviewer|REVISION REQUEST for"; then
+          if echo "$PROMPT" | grep -qF "You are a code reviewer"; then
             exit 0
           fi
           ISSUE_N=$(echo "$PROMPT" | grep -oP 'Issue #\K[0-9]+' | head -1 || true)
@@ -202,38 +177,7 @@ jobs:
               )] | first // empty')
           fi
           if [ -z "$PR_DATA" ] || [ "$PR_DATA" = "null" ]; then
-            if [ -n "$ISSUE_N" ]; then
-              BRANCH_NAME="feature/issue-${ISSUE_N}"
-              if git ls-remote --exit-code origin "refs/heads/$BRANCH_NAME" > /dev/null 2>&1; then
-                echo "Branch $BRANCH_NAME exists but no PR — creating PR"
-                ISSUE_TITLE=$(GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue view "$ISSUE_N" \
-                  --repo strata-reports-ai/orchestrator-strata-reports \
-                  --json title --jq '.title' 2>/dev/null || echo "Issue #$ISSUE_N fix")
-                PR_JSON=$(gh pr create \
-                  --base main --head "$BRANCH_NAME" \
-                  --title "$ISSUE_TITLE" \
-                  --body "Implements strata-reports-ai/orchestrator-strata-reports#${ISSUE_N}" \
-                  --json number 2>/dev/null || echo "")
-                PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number // empty')
-                if [ -n "$PR_NUMBER" ]; then
-                  HEAD_BRANCH="$BRANCH_NAME"
-                  export PR_NUMBER HEAD_BRANCH
-                  bash scripts/trigger-review.sh
-                else
-                  echo "PR creation failed — resetting to ready"
-                  GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
-                    --repo strata-reports-ai/orchestrator-strata-reports \
-                    --remove-label in-progress --add-label ready
-                fi
-              else
-                echo "No branch $BRANCH_NAME found — resetting to ready"
-                GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
-                  --repo strata-reports-ai/orchestrator-strata-reports \
-                  --remove-label in-progress --add-label ready
-              fi
-            else
-              echo "No open feature PRs awaiting review — skipping"
-            fi
+            echo "No open feature PRs awaiting review — skipping"
             exit 0
           fi
           PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')

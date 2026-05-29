@@ -11,6 +11,8 @@ public class AppUser
     public bool IsEmailVerified { get; set; }
     public string? EmailVerificationToken { get; set; }
     public DateTimeOffset? EmailVerificationTokenExpiresAt { get; set; }
+    public string? PasswordResetToken { get; set; }
+    public DateTimeOffset? PasswordResetTokenExpiresAt { get; set; }
     public string Role { get; set; } = "owner";
     public DateTimeOffset? LastLoginAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
