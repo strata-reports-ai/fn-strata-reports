@@ -38,4 +38,12 @@ builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();
 
-builder.Build().Run();
+var app = builder.Build();
+
+using (IServiceScope scope = app.Services.CreateScope())
+{
+    AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+}
+
+app.Run();
