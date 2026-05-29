@@ -259,17 +259,25 @@ public class AuthFunction(
         if (!Guid.TryParse(jtiClaim, out Guid jti) || !Guid.TryParse(subClaim, out Guid userId))
             return await Unauthorized(req, "Invalid token claims.");
 
-        RefreshToken? storedToken = await db.RefreshTokens
-            .FirstOrDefaultAsync(r => r.Jti == jti && r.RevokedAt == null, ct);
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction tx =
+            await db.Database.BeginTransactionAsync(ct);
 
-        if (storedToken is null || storedToken.ExpiresAt < DateTimeOffset.UtcNow)
+        int revoked = await db.Database.ExecuteSqlRawAsync(
+            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE jti = {0} AND revoked_at IS NULL AND expires_at > NOW()",
+            jti);
+
+        if (revoked == 0)
+        {
+            await tx.RollbackAsync(ct);
             return await Unauthorized(req, "Refresh token has been revoked or expired.");
+        }
 
         AppUser? user = await db.Users.FindAsync([userId], ct);
         if (user is null)
+        {
+            await tx.RollbackAsync(ct);
             return await Unauthorized(req, "User not found.");
-
-        storedToken.RevokedAt = DateTimeOffset.UtcNow;
+        }
 
         string newAccessToken = jwtService.GenerateAccessToken(user.Id, user.TenantId, user.Email, user.Role);
         (string newRefreshTokenValue, Guid newJti) = jwtService.GenerateRefreshToken(user.Id, user.TenantId);
@@ -286,6 +294,7 @@ public class AuthFunction(
         db.RefreshTokens.Add(newRefreshToken);
 
         await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
 
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         SetAuthCookies(response, newAccessToken, newRefreshTokenValue);

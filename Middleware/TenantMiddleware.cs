@@ -9,7 +9,7 @@ using StrataReports.Functions.Infrastructure;
 
 namespace StrataReports.Functions.Middleware;
 
-public class TenantMiddleware(ILogger<TenantMiddleware> logger, AppDbContext db) : IFunctionsWorkerMiddleware
+public class TenantMiddleware(ILogger<TenantMiddleware> logger) : IFunctionsWorkerMiddleware
 {
     private static readonly HashSet<string> _unauthenticatedRoutes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -70,6 +70,7 @@ public class TenantMiddleware(ILogger<TenantMiddleware> logger, AppDbContext db)
             ?? string.Empty;
         context.Items["ClaimsPrincipal"] = principal;
 
+        AppDbContext db = (AppDbContext)context.InstanceServices.GetService(typeof(AppDbContext))!;
         await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", tenantId.ToString());
 
         await next(context);
