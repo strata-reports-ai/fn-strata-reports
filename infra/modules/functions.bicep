@@ -4,6 +4,7 @@ param storageAccountName string
 param appInsightsConnectionString string
 param keyVaultUri string
 param connectionStringSecretUri string
+param jwtSecretSecretUri string
 
 var hostingPlanName = 'plan-strata-${environment}'
 var functionAppName = 'func-strata-${environment}'
@@ -59,6 +60,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         {
           name: 'ConnectionStrings__Database'
           value: '@Microsoft.KeyVault(SecretUri=${connectionStringSecretUri})'
+        }
+        {
+          name: 'JWT_SECRET'
+          value: '@Microsoft.KeyVault(SecretUri=${jwtSecretSecretUri})'
         }
         {
           name: 'ASPNETCORE_ENVIRONMENT'

@@ -16,6 +16,10 @@ param postgresAdminLogin string = 'strataadmin'
 @secure()
 param postgresAdminPassword string
 
+@description('Secret key used to sign and verify JWT tokens')
+@secure()
+param jwtSecret string
+
 module appInsights 'modules/appinsights.bicep' = {
   name: 'appInsightsDeploy'
   params: {
@@ -41,6 +45,7 @@ module functionsInit 'modules/functions.bicep' = {
     appInsightsConnectionString: appInsights.outputs.connectionString
     keyVaultUri: keyVault.outputs.keyVaultUri
     connectionStringSecretUri: postgres.outputs.connectionStringSecretUri
+    jwtSecretSecretUri: keyVault.outputs.jwtSecretSecretUri
   }
   dependsOn: [
     keyVault
@@ -54,6 +59,7 @@ module keyVault 'modules/keyvault.bicep' = {
     location: location
     environment: environment
     functionsAppPrincipalId: functionsInit.outputs.principalId
+    jwtSecret: jwtSecret
   }
 }
 
