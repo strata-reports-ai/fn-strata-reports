@@ -92,7 +92,7 @@ jobs:
         run: dotnet build StrataReports.Functions.csproj --configuration Release --no-restore
 
       - name: Reset issue on build failure
-        if: steps.validate.outcome == 'failure'
+        if: always() && steps.validate.outcome == 'failure'
         env:
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           BRANCH: ${{ github.event.inputs.branch || 'main' }}
