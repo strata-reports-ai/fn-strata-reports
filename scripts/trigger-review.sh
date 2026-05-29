@@ -22,12 +22,13 @@ if [ -n "$ISSUE_N" ]; then
     --remove-label in-progress --add-label code-review
 fi
 
-# Guard 2: skip if review comment already exists
-EXISTING_REVIEW=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '[.[] | select(.body | (startswith("✅ **Code review") or startswith("## Review findings") or startswith("⚠️ Max revision")))] | length' \
+# Guard 2: skip if review cycle is terminal (passed or max retries reached)
+# Does NOT block on "## Review findings" — that just means fixes are in progress and a re-review is expected.
+TERMINAL_COMMENT=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
+  --jq '[.[] | select(.body | (startswith("✅ **Code review") or startswith("⚠️ Max revision")))] | length' \
   2>/dev/null || echo "0")
-if [ "${EXISTING_REVIEW:-0}" -gt "0" ]; then
-  echo "PR #${PR_NUMBER} already has a review comment — skipping"
+if [ "${TERMINAL_COMMENT:-0}" -gt "0" ]; then
+  echo "PR #${PR_NUMBER} review cycle is complete (passed or max retries) — skipping"
   exit 0
 fi
 
@@ -80,7 +81,14 @@ Original task: \$ORIGINAL
 
 Review feedback: [replace with specific findings]
 
-Push fixes to the EXISTING branch ${HEAD_BRANCH}. Do NOT create a new branch." \
+Push fixes to the EXISTING branch ${HEAD_BRANCH}. Do NOT create a new branch.
+
+After pushing all fixes, run these commands to trigger a re-review (in this exact order):
+  ISSUE_N_R=\$(gh pr view ${PR_NUMBER} --repo ${PR_REPO} --json body --jq '.body' | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+  if [ -n \"\$ISSUE_N_R\" ]; then
+    GH_TOKEN=\"\$GH_DISPATCH_TOKEN\" gh issue edit \"\$ISSUE_N_R\" --repo strata-reports-ai/orchestrator-strata-reports --remove-label code-review --add-label in-progress 2>/dev/null || true
+  fi
+  GH_TOKEN=\"\$GH_DISPATCH_TOKEN\" gh workflow run code-review.yml --repo ${PR_REPO} --field pr_number=${PR_NUMBER} --field head_branch=${HEAD_BRANCH}" \
       --arg b "${HEAD_BRANCH}" \
       '{"ref":"main","inputs":{"prompt":\$p,"branch":\$b}}' | \
     GH_TOKEN="\$GH_DISPATCH_TOKEN" gh api \
@@ -98,3 +106,4 @@ GH_TOKEN="$GH_DISPATCH_TOKEN" gh api \
   --method POST --input -
 
 echo "Review dispatched."
+
