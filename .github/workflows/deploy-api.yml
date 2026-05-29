@@ -67,22 +67,19 @@ jobs:
             "Postmark__ApiKey=${POSTMARK_API_KEY}" \
             "AzureWebJobsStorage=${BLOB_CONNECTION_STRING}"
 
-
       - name: Apply database migrations
         env:
           ConnectionStrings__Database: Host=psql-strata-reports-dev.postgres.database.azure.com;Database=stratareports;Username=stratareportadmin;Password=${{ secrets.POSTGRES_ADMIN_PASSWORD }};SSL Mode=Require
           PGPASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
-          PGHOST: psql-strata-reports-dev.postgres.database.azure.com
-          PGUSER: stratareportadmin
-          PGDATABASE: stratareports
           PGSSLMODE: require
         run: |
           sudo apt-get install -y postgresql-client -qq
-          USERS=$(psql -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='Users'" 2>/dev/null | tr -d ' \n' || echo "0")
-          HIST=$(psql -t -c 'SELECT COUNT(*) FROM "__EFMigrationsHistory"' 2>/dev/null | tr -d ' \n' || echo "0")
-          if [ "$USERS" = "0" ] && [ "$HIST" != "0" ]; then
-            echo "Stale migration history ($HIST entries, no tables) — resetting"
-            psql -c 'DROP TABLE IF EXISTS "__EFMigrationsHistory"'
+          PGCONN="host=psql-strata-reports-dev.postgres.database.azure.com dbname=stratareports user=stratareportadmin sslmode=require"
+          if PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c '\d "Users"' >/dev/null 2>&1; then
+            echo "Users table exists — migration history is valid"
+          else
+            echo "Users table missing — clearing stale migration history"
+            PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'DELETE FROM "__EFMigrationsHistory"' 2>/dev/null || true
           fi
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:$HOME/.dotnet/tools"
@@ -110,4 +107,3 @@ jobs:
           gh api repos/strata-reports-ai/fn-strata-reports/actions/workflows/test-agent.yml/dispatches \
             --method POST --input -
           echo "Triggered test agent for PR #$PR_NUMBER (issue: ${ORCHESTRATOR_ISSUE:-none})"
-
