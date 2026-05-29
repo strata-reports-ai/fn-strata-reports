@@ -58,8 +58,8 @@ jobs:
           mode: agent
           model: claude-sonnet-4-6
           allowed_tools: Bash,Read,Write,Edit,Glob,Grep
-          timeout_minutes: 45
-          max_turns: 80
+          timeout_minutes: 60
+          max_turns: 100
           direct_prompt: ${{ steps.prompt.outputs.value }}
 
       - name: Handle spending cap
