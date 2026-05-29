@@ -79,12 +79,25 @@ jobs:
         run: |
           sudo apt-get install -y postgresql-client -qq
           PGCONN="host=psql-strata-reports-dev.postgres.database.azure.com dbname=stratareports user=stratareportadmin sslmode=require"
-          if PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c '\d "Users"' >/dev/null 2>&1; then
-            echo "Users table exists — migration history is valid"
-          else
-            echo "Users table missing — dropping migration history to force full replay"
-            PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'DROP TABLE IF EXISTS "__EFMigrationsHistory"' 2>/dev/null || true
-          fi
+          echo "=== DB diagnostic ==="
+          PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c "SELECT schemaname, tablename, tableowner FROM pg_tables WHERE tableowner != 'azure_superuser' ORDER BY schemaname, tablename" 2>&1 || echo "pg_tables query failed"
+          echo "=== Migration history ==="
+          PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'SELECT * FROM "__EFMigrationsHistory"' 2>&1 || echo "(table does not exist)"
+          echo "=== search_path ==="
+          PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'SHOW search_path' 2>&1
+          echo "=== End diagnostic ==="
+          echo "Dropping all __EFMigrationsHistory tables and all user-owned tables..."
+          PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" <<'EOSQL' || true
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT schemaname, tablename FROM pg_tables WHERE tableowner = current_user LOOP
+    EXECUTE 'DROP TABLE IF EXISTS "' || r.schemaname || '"."' || r.tablename || '" CASCADE';
+  END LOOP;
+END $$;
+EOSQL
+          echo "=== After reset ==="
+          PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c "SELECT schemaname, tablename FROM pg_tables WHERE tableowner != 'azure_superuser'" 2>&1
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef database update --project StrataReports.Functions.csproj --verbose
