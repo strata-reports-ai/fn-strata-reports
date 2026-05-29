@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Property> Properties => Set<Property>();
     public DbSet<Import> Imports => Set<Import>();
     public DbSet<RevenueRecord> RevenueRecords => Set<RevenueRecord>();
@@ -22,6 +23,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.Entity<AppUser>().HasIndex(u => u.EntraObjectId).IsUnique();
+        modelBuilder.Entity<AppUser>().HasIndex(u => u.Email).IsUnique();
+        modelBuilder.Entity<RefreshToken>().HasIndex(r => r.Jti).IsUnique();
+        modelBuilder.Entity<RefreshToken>().HasIndex(r => new { r.UserId, r.RevokedAt });
         modelBuilder.Entity<Property>().HasIndex(p => new { p.TenantId, p.DeletedAt });
         modelBuilder.Entity<RevenueRecord>().HasAlternateKey(r => new { r.TenantId, r.PropertyId, r.BookingExternalId });
         modelBuilder.Entity<RevenueRecord>().HasIndex(r => new { r.TenantId, r.PropertyId, r.CheckinDate });

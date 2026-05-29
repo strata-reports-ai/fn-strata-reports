@@ -8,6 +8,7 @@ using Microsoft.Extensions.Hosting;
 using OpenTelemetry;
 using Serilog;
 using StrataReports.Functions.Infrastructure;
+using StrataReports.Functions.Middleware;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -28,5 +29,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddSingleton<IDbConnectionFactory>(
     new NpgsqlConnectionFactory(builder.Configuration["ConnectionStrings:Database"]!));
+
+builder.Services.AddSingleton<IJwtService, JwtService>();
+
+// TODO: replace with real email service when ACS/Postmark is configured
+builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
+
+builder.UseMiddleware<RateLimitMiddleware>();
+builder.UseMiddleware<TenantMiddleware>();
 
 builder.Build().Run();
