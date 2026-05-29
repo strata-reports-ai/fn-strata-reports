@@ -88,6 +88,7 @@ jobs:
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef database update --project StrataReports.Functions.csproj --verbose
 
+      - name: Trigger test agent
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
