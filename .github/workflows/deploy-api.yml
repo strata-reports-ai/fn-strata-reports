@@ -67,6 +67,15 @@ jobs:
             "Postmark__ApiKey=${POSTMARK_API_KEY}" \
             "AzureWebJobsStorage=${BLOB_CONNECTION_STRING}"
 
+
+      - name: Apply database migrations
+        env:
+          ConnectionStrings__Database: Host=psql-strata-reports-dev.postgres.database.azure.com;Database=stratareports;Username=stratareportadmin;Password=${{ secrets.POSTGRES_ADMIN_PASSWORD }};SSL Mode=Require
+        run: |
+          dotnet tool install --global dotnet-ef
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          dotnet ef database update --project StrataReports.Functions.csproj --verbose
+
       - name: Trigger test agent
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
