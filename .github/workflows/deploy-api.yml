@@ -45,6 +45,7 @@ jobs:
         env:
           POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
@@ -58,6 +59,7 @@ jobs:
             --settings \
             "ConnectionStrings__Database=Host=psql-strata-reports-dev.postgres.database.azure.com;Database=stratareports;Username=stratareportadmin;Password=${POSTGRES_ADMIN_PASSWORD};SSL Mode=Require" \
             "Anthropic__ApiKey=${ANTHROPIC_API_KEY}" \
+            "JWT_SECRET=${JWT_SECRET}" \
             "Stripe__SecretKey=${STRIPE_SECRET_KEY}" \
             "Stripe__WebhookSecret=${STRIPE_WEBHOOK_SECRET}" \
             "Entra__ClientId=${ENTRA_CLIENT_ID}" \
@@ -87,3 +89,4 @@ jobs:
           gh api repos/strata-reports-ai/fn-strata-reports/actions/workflows/test-agent.yml/dispatches \
             --method POST --input -
           echo "Triggered test agent for PR #$PR_NUMBER (issue: ${ORCHESTRATOR_ISSUE:-none})"
+
