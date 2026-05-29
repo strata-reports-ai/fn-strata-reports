@@ -7,6 +7,10 @@ public class AppUser
     public required string EntraObjectId { get; set; }
     public required string Email { get; set; }
     public string? DisplayName { get; set; }
+    public string? PasswordHash { get; set; }
+    public bool IsEmailVerified { get; set; }
+    public string? EmailVerificationToken { get; set; }
+    public DateTimeOffset? EmailVerificationTokenExpiresAt { get; set; }
     public string Role { get; set; } = "owner";
     public DateTimeOffset? LastLoginAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
