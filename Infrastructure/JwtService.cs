@@ -116,5 +116,9 @@ public class JwtService(IConfiguration configuration) : IJwtService
         {
             return null;
         }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 }
