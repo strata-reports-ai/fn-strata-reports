@@ -9,6 +9,7 @@ using OpenTelemetry;
 using Serilog;
 using StrataReports.Functions.Infrastructure;
 using StrataReports.Functions.Middleware;
+using StrataReports.Functions.Services;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -34,6 +35,8 @@ builder.Services.AddSingleton<IJwtService, JwtService>();
 
 // TODO: replace with real email service when ACS/Postmark is configured
 builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
+
+builder.Services.AddScoped<IReportContextBuilder, ReportContextBuilder>();
 
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();
