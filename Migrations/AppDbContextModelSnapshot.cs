@@ -57,6 +57,9 @@ namespace StrataReports.Functions.Migrations
                     b.Property<string>("PasswordHash")
                         .HasColumnType("text");
 
+                    b.Property<string>("PendingEmail")
+                        .HasColumnType("text");
+
                     b.Property<string>("PasswordResetToken")
                         .HasColumnType("text");
 

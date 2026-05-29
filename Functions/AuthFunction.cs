@@ -346,6 +346,13 @@ public class AuthFunction(
         user.IsEmailVerified = true;
         user.EmailVerificationToken = null;
         user.EmailVerificationTokenExpiresAt = null;
+
+        if (user.PendingEmail is not null)
+        {
+            user.Email = user.PendingEmail;
+            user.PendingEmail = null;
+        }
+
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);

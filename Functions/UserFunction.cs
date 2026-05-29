@@ -71,6 +71,7 @@ public class UserFunction(
                     return await BadRequest(req, "That email address is already in use.");
 
                 string verificationToken = GenerateSecureToken();
+                user.PendingEmail = normalizedNewEmail;
                 user.EmailVerificationToken = verificationToken;
                 user.EmailVerificationTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(24);
 
