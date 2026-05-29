@@ -78,8 +78,8 @@ jobs:
           if PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c '\d "Users"' >/dev/null 2>&1; then
             echo "Users table exists — migration history is valid"
           else
-            echo "Users table missing — clearing stale migration history"
-            PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'DELETE FROM "__EFMigrationsHistory"' 2>/dev/null || true
+            echo "Users table missing — dropping migration history to force full replay"
+            PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'DROP TABLE IF EXISTS "__EFMigrationsHistory"' 2>/dev/null || true
           fi
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:$HOME/.dotnet/tools"
