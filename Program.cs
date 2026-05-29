@@ -63,6 +63,7 @@ builder.Services.AddHttpClient("OpenAi", (sp, client) =>
 });
 
 builder.Services.AddScoped<INarrativeGeneratorService, NarrativeGeneratorService>();
+builder.Services.AddScoped<IPdfRenderService, PdfRenderService>();
 
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();

@@ -46,6 +46,10 @@
     <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
     <!-- Queue storage -->
     <PackageReference Include="Azure.Storage.Queues" Version="12.21.0" />
+    <!-- PDF generation -->
+    <PackageReference Include="QuestPDF" Version="2025.4.2" />
+    <!-- Chart rendering -->
+    <PackageReference Include="ScottPlot" Version="5.0.55" />
   </ItemGroup>
 
   <ItemGroup>

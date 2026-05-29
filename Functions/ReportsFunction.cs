@@ -12,7 +12,9 @@ namespace StrataReports.Functions.Functions;
 public class ReportsFunction(
     ILogger<ReportsFunction> logger,
     AppDbContext db,
-    INarrativeGeneratorService narrativeGenerator)
+    INarrativeGeneratorService narrativeGenerator,
+    IPdfRenderService pdfRenderService,
+    IReportContextBuilder reportContextBuilder)
 {
     [Function("ReportsGenerateNarrative")]
     public async Task Run(
@@ -83,13 +85,12 @@ public class ReportsFunction(
             return;
         }
 
-        report.Status = "completed";
         report.JsonPayload = JsonSerializer.Serialize(result.Narrative, new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         });
         report.ErrorMessage = null;
-
+        report.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
         logger.LogInformation(
@@ -97,6 +98,37 @@ public class ReportsFunction(
             "outputTokens={OutputTokens} costUsd={CostUsd} latencyMs={LatencyMs}",
             report.Id, result.ModelUsed, result.InputTokens, result.OutputTokens,
             result.CostUsd, latencyMs);
+
+        ReportContextDto? reportContext;
+        try
+        {
+            reportContext = await reportContextBuilder.BuildReportContextAsync(
+                report.PropertyId, report.PeriodStart, report.PeriodEnd, report.TenantId, ct);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await FailReportAsync(report, $"Failed to build PDF context: {ex.Message}", ct);
+            return;
+        }
+
+        try
+        {
+            PdfRenderResult pdfResult = await pdfRenderService.RenderAndUploadAsync(
+                result.Narrative!, reportContext, report.TenantId, report.Id, ct);
+
+            report.PdfBlobPath = pdfResult.BlobPath;
+            report.Status = "succeeded";
+            report.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+
+            logger.LogInformation(
+                "report.pdf_rendered reportId={ReportId} blobPath={BlobPath}",
+                report.Id, pdfResult.BlobPath);
+        }
+        catch (ReportRenderException ex)
+        {
+            await FailReportAsync(report, $"PDF render failed: {ex.Message}", ct);
+        }
     }
 
     private async Task<NarrativeReportContextDto> BuildReportContextAsync(Report report, CancellationToken ct)
