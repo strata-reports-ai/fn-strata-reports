@@ -11,13 +11,24 @@ STEP 1 — Get context
 {{ISSUE_STEP}}
 
 STEP 2 — Authenticate against the dev API
-  Find the auth endpoint in Functions/AuthFunction.cs (look for the Route attribute on the login function).
-  Then authenticate:
-    RESPONSE=$(curl -s -X POST "https://fn-strata-reports.azurewebsites.net/api/[auth-route]" \
+  Read Functions/AuthFunction.cs to find the register and login route attributes.
+
+  First, ensure the test account exists (register — safe to call repeatedly, ignore 409):
+    REG_STATUS=$(curl -s -o /tmp/reg-response.txt -w "%{http_code}" -X POST "https://fn-strata-reports.azurewebsites.net/api/[register-route]" \
+      -H "Content-Type: application/json" \
+      -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\",\"name\":\"CI Test User\",\"tenantName\":\"CI Test Tenant\"}")
+    echo "Register status: $REG_STATUS"
+    # 200/201 = created, 409 = already exists — both are fine; anything else may indicate a bug
+
+  Then login:
+    RESPONSE=$(curl -s -X POST "https://fn-strata-reports.azurewebsites.net/api/[login-route]" \
       -H "Content-Type: application/json" \
       -d "{\"email\":\"$TEST_EMAIL\",\"password\":\"$TEST_PASSWORD\"}")
     TOKEN=$(echo "$RESPONSE" | grep -oP '"token"\s*:\s*"\K[^"]+' || true)
-    # Note: auth uses Microsoft Entra External ID — check actual auth flow from code
+    echo "Login token present: $([ -n "$TOKEN" ] && echo yes || echo no)"
+
+  If TOKEN is empty after login: the auth endpoints are broken — file one bug describing the failure
+  (include the exact curl, response body, and HTTP status) then STOP.
 
   Authenticated requests use:
     -H "Authorization: Bearer $TOKEN"
