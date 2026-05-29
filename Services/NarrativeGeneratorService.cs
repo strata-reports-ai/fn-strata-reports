@@ -418,7 +418,7 @@ public sealed class NarrativeGeneratorService(
         if (number <= 5 && number >= 1 && number == Math.Floor(number))
             return true;
 
-        if (number >= 100 && number <= 9999 && number == Math.Floor(number))
+        if (number >= 2000 && number <= 2030 && number == Math.Floor(number))
             return true;
 
         foreach (decimal a in allowed)
