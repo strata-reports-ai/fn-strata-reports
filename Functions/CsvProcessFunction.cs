@@ -163,7 +163,7 @@ public class CsvProcessFunction(
             return FailedResult("CSV file has no header row.");
 
         Dictionary<string, string>? resolved = ResolveColumns(headers, RevenueColumnSynonyms,
-            ["booking_external_id", "checkin_date", "checkout_date", "gross_revenue", "platform"],
+            ["booking_external_id", "checkin_date", "checkout_date", "gross_revenue"],
             out string? missingError);
 
         if (resolved is null)
@@ -187,7 +187,9 @@ public class CsvProcessFunction(
                 string checkinRaw = GetField(csv, resolved["checkin_date"]);
                 string checkoutRaw = GetField(csv, resolved["checkout_date"]);
                 string grossRaw = GetField(csv, resolved["gross_revenue"]);
-                string platform = GetField(csv, resolved["platform"]);
+                string platform = resolved.TryGetValue("platform", out string? platformCol)
+                    ? GetField(csv, platformCol)
+                    : string.Empty;
 
                 if (string.IsNullOrWhiteSpace(bookingId))
                 {
