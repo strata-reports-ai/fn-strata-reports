@@ -4,7 +4,7 @@
 
 Azure Functions isolated worker (.NET 9) backend for StrataReport AI. PostgreSQL via EF Core + Dapper.
 
-## ⚠ Build must pass before committing
+## Build must pass before committing
 
 Always run `dotnet build StrataReports.Functions.csproj --configuration Release` and fix **all** errors before committing. Do not commit code that does not compile.
 
@@ -17,7 +17,7 @@ Only use packages that are already declared in `StrataReports.Functions.csproj`.
 - `Dapper` 2.1.66
 - `Serilog.Extensions.Hosting`, `Serilog.Sinks.Console`
 - `OpenTelemetry` stack (Azure Monitor exporter)
-- `Microsoft.IdentityModel.Tokens` 8.3.2 + `System.IdentityModel.Tokens.Jwt` 8.3.2 (JWT signing/validation)
+- `Microsoft.IdentityModel.Tokens` 8.4.0 + `System.IdentityModel.Tokens.Jwt` 8.4.0 (JWT signing/validation)
 
 **No Postmark, no SendGrid, no ACS — email is not yet wired up.**
 
@@ -49,38 +49,43 @@ Secrets `ENTRA_CLIENT_ID` and `ENTRA_TENANT_ID` will be available as environment
 - Use `IDbConnectionFactory` (Dapper) for read-heavy or raw SQL queries.
 - Never bypass RLS. `TenantMiddleware` must run on all authenticated endpoints.
 
-## Azure Functions isolated worker — middleware registration
+## IMPORTANT: This project uses FunctionsApplication.CreateBuilder (new-style host)
 
-This is an **isolated worker** model, NOT ASP.NET Core. The `IHost` object does NOT have `UseMiddleware`, `UseAuthentication`, or `UseAuthorization`. These are ASP.NET Core extension methods on `IApplicationBuilder` and will not compile here.
-
-Middleware is registered inside `ConfigureFunctionsWorkerDefaults`:
+This project uses `FunctionsApplication.CreateBuilder`, NOT the old `HostBuilder` pattern. The existing `Program.cs` uses this pattern:
 
 ```csharp
-var host = new HostBuilder()
-    .ConfigureFunctionsWorkerDefaults(worker =>
-    {
-        worker.UseMiddleware<TenantMiddleware>();
-    })
-    .ConfigureServices(services => { ... })
-    .Build();
-await host.RunAsync();
+var builder = FunctionsApplication.CreateBuilder(args);
+builder.ConfigureFunctionsWebApplication();
+
+// Register services on builder.Services:
+builder.Services.AddDbContext<AppDbContext>(...);
+builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
+
+builder.Build().Run();
 ```
 
-Do NOT write:
+### Adding middleware
+
+Call `builder.UseMiddleware<T>()` directly on the builder — do NOT use `ConfigureFunctionsWorkerDefaults` or pass a lambda to `ConfigureFunctionsWebApplication`, those are the old `IHostBuilder` API and will not compile here.
+
 ```csharp
-var host = builder.Build();
-host.UseMiddleware<TenantMiddleware>(); // CS1929 — will not compile
-host.UseAuthentication();              // CS1929 — will not compile
+// CORRECT:
+builder.UseMiddleware<TenantMiddleware>();
+
+// WRONG — will not compile (old IHostBuilder pattern):
+var host = new HostBuilder().ConfigureFunctionsWorkerDefaults(w => w.UseMiddleware<TenantMiddleware>()).Build();
+
+// WRONG — will not compile (wrong overload):
+builder.ConfigureFunctionsWebApplication(worker => { worker.UseMiddleware<TenantMiddleware>(); });
 ```
 
-`IFunctionsWorkerMiddleware` (not `IMiddleware`) is the correct interface for Functions middleware:
+`IFunctionsWorkerMiddleware` (not `IMiddleware`) is the correct interface:
 
 ```csharp
 public class TenantMiddleware : IFunctionsWorkerMiddleware
 {
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)
     {
-        // set tenant session variable here
         await next(context);
     }
 }
@@ -90,7 +95,7 @@ To execute raw SQL in middleware, inject `AppDbContext` and call:
 ```csharp
 await db.Database.ExecuteSqlRawAsync("SET app.current_tenant_id = {0}", tenantId);
 ```
-`ExecuteSqlRawAsync` is an extension on `DatabaseFacade` — requires `using Microsoft.EntityFrameworkCore;`.
+Requires `using Microsoft.EntityFrameworkCore;`.
 
 `CookieOptions` is a **class** (not a record). Do NOT use `with { }` syntax on it:
 ```csharp
@@ -113,4 +118,3 @@ var opts = new CookieOptions { HttpOnly = true, Secure = true, SameSite = SameSi
 - Enable nullable: treat all warnings as potential bugs; initialise variables before use.
 - No `var` for non-obvious types. Explicit types on public members.
 - No bare `catch (Exception)` — catch specific exception types.
-
