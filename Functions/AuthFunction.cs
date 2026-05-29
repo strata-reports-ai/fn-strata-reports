@@ -242,6 +242,51 @@ public class AuthFunction(
         return response;
     }
 
+    [Function("AuthResetPassword")]
+    public async Task<HttpResponseData> ResetPassword(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/reset-password")] HttpRequestData req,
+        CancellationToken ct)
+    {
+        ResetPasswordRequest? body = await req.ReadFromJsonAsync<ResetPasswordRequest>(ct);
+        if (body is null || string.IsNullOrWhiteSpace(body.Email))
+            return await BadRequest(req, "Email is required.");
+
+        AppUser? user = await db.Users.FirstOrDefaultAsync(
+            u => u.Email == body.Email.ToLowerInvariant(), ct);
+
+        if (user is not null)
+        {
+            string resetToken = GenerateSecureToken();
+            user.EmailVerificationToken = resetToken;
+            user.EmailVerificationTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AuditLog auditEntry = new()
+            {
+                Id = Guid.NewGuid(),
+                TenantId = user.TenantId,
+                UserId = user.Id,
+                Action = "password_reset_requested",
+                IpAddress = GetClientIp(req),
+                UserAgent = GetUserAgent(req),
+                OccurredAt = DateTimeOffset.UtcNow,
+            };
+            db.AuditLogs.Add(auditEntry);
+
+            await db.SaveChangesAsync(ct);
+
+            await emailService.SendPasswordResetEmailAsync(user.Email, resetToken, ct);
+
+            logger.LogInformation("Password reset requested for user {UserId}", user.Id);
+        }
+
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(
+            "{\"message\":\"If that email address is registered, a reset link has been sent.\"}");
+        return response;
+    }
+
     [Function("AuthRefresh")]
     public async Task<HttpResponseData> Refresh(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/refresh")] HttpRequestData req,
@@ -449,4 +494,6 @@ public class AuthFunction(
         string? OrganisationName);
 
     private sealed record LoginRequest(string? Email, string? Password);
+
+    private sealed record ResetPasswordRequest(string? Email);
 }
