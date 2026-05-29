@@ -13,6 +13,7 @@
     <Compile Remove="Tests\**" />
     <EmbeddedResource Remove="Tests\**" />
     <None Remove="Tests\**" />
+    <Compile Remove="StrataReports.Functions.Tests\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,6 +46,10 @@
     <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
     <!-- Queue storage -->
     <PackageReference Include="Azure.Storage.Queues" Version="12.21.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Prompts\quarterly_owner_report.txt" />
   </ItemGroup>
 
 </Project>

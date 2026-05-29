@@ -42,6 +42,28 @@ builder.Services.AddScoped<IReportContextBuilder, ReportContextBuilder>();
 builder.Services.AddSingleton<IBlobService, BlobService>();
 builder.Services.AddSingleton<IQueueService, QueueService>();
 
+builder.Services.AddHttpClient("Anthropic", (sp, client) =>
+{
+    client.BaseAddress = new Uri("https://api.anthropic.com/v1/");
+    string? apiKey = builder.Configuration["ANTHROPIC_API_KEY"];
+    if (!string.IsNullOrEmpty(apiKey))
+    {
+        client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+        client.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+    }
+});
+
+builder.Services.AddHttpClient("OpenAi", (sp, client) =>
+{
+    client.BaseAddress = new Uri("https://api.openai.com/v1/");
+    string? apiKey = builder.Configuration["OPENAI_API_KEY"];
+    if (!string.IsNullOrEmpty(apiKey))
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+});
+
+builder.Services.AddScoped<INarrativeGeneratorService, NarrativeGeneratorService>();
+
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();
 
