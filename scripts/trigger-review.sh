@@ -41,7 +41,7 @@ fi
 
 # Guard 2b: review passed — if PR is still open, attempt to merge or dispatch rebase
 PASSED_COMMENT=$(gh api "repos/${PR_REPO}/issues/${PR_NUMBER}/comments" \
-  --jq '[.[] | select(.body | startswith("✅ **Code review"))] | length' \
+  --jq '[.[] | select(.body | (startswith("✅ **Code review") or startswith("## Merge blocked")))] | length' \
   2>/dev/null || echo "0")
 if [ "${PASSED_COMMENT:-0}" -gt "0" ]; then
   PR_STATE=$(gh pr view "${PR_NUMBER}" --repo "${PR_REPO}" --json state --jq '.state' 2>/dev/null || echo "CLOSED")
