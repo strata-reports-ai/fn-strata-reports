@@ -75,7 +75,7 @@ public class CsvProcessFunction(
         if (import is null)
         {
             logger.LogError("Import record {ImportId} not found", message.ImportId);
-            return;
+            throw new InvalidOperationException($"Import record {message.ImportId} not found — message will be retried/dead-lettered.");
         }
 
         string connectionString = configuration["AzureWebJobsStorage"]
