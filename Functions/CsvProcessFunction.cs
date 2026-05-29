@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,6 +21,10 @@ public class CsvProcessFunction(
     AppDbContext db,
     IConfiguration configuration)
 {
+    private static readonly Meter _meter = new("StrataReports.Functions");
+    private static readonly Histogram<long> _processingMs = _meter.CreateHistogram<long>(
+        "import.processing_ms", unit: "ms");
+
     private static readonly IReadOnlyDictionary<string, string[]> RevenueColumnSynonyms =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -135,6 +140,7 @@ public class CsvProcessFunction(
         await db.SaveChangesAsync(ct);
 
         long elapsedMs = (long)Stopwatch.GetElapsedTime(startMs).TotalMilliseconds;
+        _processingMs.Record(elapsedMs, new TagList { { "importType", message.ImportType } });
         logger.LogInformation(
             "import.processing_ms={ElapsedMs} importType={ImportType} importId={ImportId} status={Status}",
             elapsedMs, message.ImportType, message.ImportId, result.Status);
