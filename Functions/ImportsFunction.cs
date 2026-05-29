@@ -62,7 +62,6 @@ public class ImportsFunction(
         {
             if (body.FileSizeBytes.Value <= 0)
                 return await BadRequest(req, "fileSizeBytes must be a positive integer.");
-
             if (body.FileSizeBytes.Value > MaxFileSizeBytes)
                 return await BadRequest(req, "File exceeds the 10 MB size limit.");
         }
