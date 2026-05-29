@@ -38,6 +38,9 @@ builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
 
 builder.Services.AddScoped<IReportContextBuilder, ReportContextBuilder>();
 
+builder.Services.AddSingleton<IBlobService, BlobService>();
+builder.Services.AddSingleton<IQueueService, QueueService>();
+
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();
 
