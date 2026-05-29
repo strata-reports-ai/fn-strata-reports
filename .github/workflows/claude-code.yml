@@ -1,4 +1,4 @@
-ame: Claude Code Agent
+name: Claude Code Agent
 
 on:
   issue_comment:
