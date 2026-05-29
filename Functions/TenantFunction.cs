@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
@@ -35,7 +36,7 @@ public class TenantFunction(
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(
-            $"{{\"id\":\"{tenant.Id}\",\"name\":\"{EscapeJson(tenant.Name)}\",\"defaultTimezone\":{JsonStringOrNull(tenant.DefaultTimezone)},\"defaultCurrency\":{JsonStringOrNull(tenant.DefaultCurrency)},\"plan\":\"{EscapeJson(tenant.Plan)}\",\"status\":\"{EscapeJson(tenant.Status)}\"}}");
+            $"{{\"id\":\"{tenant.Id}\",\"name\":{EscapeJson(tenant.Name)},\"defaultTimezone\":{JsonStringOrNull(tenant.DefaultTimezone)},\"defaultCurrency\":{JsonStringOrNull(tenant.DefaultCurrency)},\"plan\":{EscapeJson(tenant.Plan)},\"status\":{EscapeJson(tenant.Status)}}}");
         return response;
     }
 
@@ -178,7 +179,7 @@ public class TenantFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.BadRequest);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -186,7 +187,7 @@ public class TenantFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -194,7 +195,7 @@ public class TenantFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Forbidden);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -202,15 +203,15 @@ public class TenantFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.NotFound);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
     private static string EscapeJson(string value)
-        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        => JsonSerializer.Serialize(value);
 
     private static string JsonStringOrNull(string? value)
-        => value is null ? "null" : $"\"{EscapeJson(value)}\"";
+        => value is null ? "null" : EscapeJson(value);
 
     private static HashSet<string> BuildIanaTimezones()
     {

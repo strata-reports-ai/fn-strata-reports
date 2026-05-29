@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
@@ -509,7 +510,7 @@ public class AuthFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.BadRequest);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -517,7 +518,7 @@ public class AuthFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -527,12 +528,12 @@ public class AuthFunction(
         response.Headers.Add("Content-Type", "application/problem+json");
         string statusCode = (int)status + "";
         await response.WriteStringAsync(
-            $"{{\"type\":\"about:blank\",\"title\":\"{EscapeJson(status.ToString())}\",\"status\":{statusCode},\"detail\":\"{EscapeJson(detail)}\"}}");
+            $"{{\"type\":\"about:blank\",\"title\":{EscapeJson(status.ToString())},\"status\":{statusCode},\"detail\":{EscapeJson(detail)}}}");
         return response;
     }
 
     private static string EscapeJson(string value)
-        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        => JsonSerializer.Serialize(value);
 
     private static string HashPassword(string password)
     {
