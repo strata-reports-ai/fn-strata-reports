@@ -17,6 +17,7 @@ public class TenantMiddleware(ILogger<TenantMiddleware> logger) : IFunctionsWork
         "/api/auth/login",
         "/api/auth/verify-email",
         "/api/auth/refresh",
+        "/api/auth/logout",
         "/api/health",
     };
 
