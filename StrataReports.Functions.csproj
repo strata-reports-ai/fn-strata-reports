@@ -50,6 +50,8 @@
     <PackageReference Include="QuestPDF" Version="2025.4.2" />
     <!-- Chart rendering -->
     <PackageReference Include="ScottPlot" Version="5.0.55" />
+    <!-- Stripe billing -->
+    <PackageReference Include="Stripe.net" Version="47.3.0" />
   </ItemGroup>
 
   <ItemGroup>

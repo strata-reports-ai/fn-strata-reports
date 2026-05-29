@@ -21,6 +21,7 @@ public class TenantMiddleware(ILogger<TenantMiddleware> logger) : IFunctionsWork
         "/api/auth/forgot-password",
         "/api/auth/reset-password",
         "/api/health",
+        "/api/billing/webhook",
     };
 
     public async Task Invoke(FunctionContext context, FunctionExecutionDelegate next)

@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using OpenTelemetry;
 using Serilog;
+using Stripe;
 using StrataReports.Functions.Infrastructure;
 using StrataReports.Functions.Middleware;
 using StrataReports.Functions.Services;
@@ -64,6 +65,12 @@ builder.Services.AddHttpClient("OpenAi", (sp, client) =>
 
 builder.Services.AddScoped<INarrativeGeneratorService, NarrativeGeneratorService>();
 builder.Services.AddScoped<IPdfRenderService, PdfRenderService>();
+
+builder.Services.AddScoped<IPlanEnforcementService, PlanEnforcementService>();
+
+string? stripeWebhookSecret = builder.Configuration["Stripe__WebhookSecret"];
+if (!string.IsNullOrEmpty(stripeWebhookSecret))
+    StripeConfiguration.ApiKey = builder.Configuration["Stripe__ApiKey"] ?? string.Empty;
 
 builder.UseMiddleware<RateLimitMiddleware>();
 builder.UseMiddleware<TenantMiddleware>();
