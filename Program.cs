@@ -23,6 +23,7 @@ builder.Logging.AddSerilog(Log.Logger, dispose: true);
 
 builder.Services.AddOpenTelemetry()
     .UseFunctionsWorkerDefaults()
+    .WithMetrics(metrics => metrics.AddMeter("StrataReports.Functions"))
     .UseAzureMonitorExporter();
 
 builder.Services.AddDbContext<AppDbContext>(options =>
