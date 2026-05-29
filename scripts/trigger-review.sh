@@ -19,8 +19,8 @@ if [ -n "$ISSUE_N" ]; then
       --workflow=code-review.yml \
       --status in_progress \
       --json status --jq 'length' 2>/dev/null || echo "0")
-    if [ "${active_review:-0}" -gt 0 ]; then
-      echo "Issue #$ISSUE_N already in code-review with active run — skipping duplicate dispatch"
+    if [ "${active_review:-0}" -gt 1 ]; then
+      echo "Issue #$ISSUE_N already in code-review with another active run — skipping duplicate dispatch"
       exit 0
     fi
     echo "Issue #$ISSUE_N in code-review but no active run — re-triggering review"
