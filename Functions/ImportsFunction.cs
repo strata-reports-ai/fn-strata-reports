@@ -58,7 +58,10 @@ public class ImportsFunction(
         if (!ValidExtensions.Contains(extension))
             return await BadRequest(req, "Only .csv or .tsv files are accepted.");
 
-        if (body.FileSizeBytes.HasValue && body.FileSizeBytes.Value > MaxFileSizeBytes)
+        if (body.FileSizeBytes <= 0)
+            return await BadRequest(req, "fileSizeBytes must be a positive integer.");
+
+        if (body.FileSizeBytes > MaxFileSizeBytes)
             return await BadRequest(req, "File exceeds the 10 MB size limit.");
 
         bool propertyBelongsToTenant = await db.Properties
@@ -259,5 +262,5 @@ public class ImportsFunction(
         string? PropertyId,
         string? ImportType,
         string? Filename,
-        long? FileSizeBytes);
+        long FileSizeBytes);
 }
