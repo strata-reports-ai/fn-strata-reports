@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Azure.Functions.Worker;
@@ -32,7 +33,7 @@ public class UserFunction(
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(
-            $"{{\"id\":\"{user.Id}\",\"email\":\"{EscapeJson(user.Email)}\",\"displayName\":{JsonStringOrNull(user.DisplayName)},\"role\":\"{EscapeJson(user.Role)}\",\"isEmailVerified\":{user.IsEmailVerified.ToString().ToLowerInvariant()}}}");
+            $"{{\"id\":\"{user.Id}\",\"email\":{EscapeJson(user.Email)},\"displayName\":{JsonStringOrNull(user.DisplayName)},\"role\":{EscapeJson(user.Role)},\"isEmailVerified\":{user.IsEmailVerified.ToString().ToLowerInvariant()}}}");
         return response;
     }
 
@@ -158,7 +159,7 @@ public class UserFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.BadRequest);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -166,7 +167,7 @@ public class UserFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
@@ -174,15 +175,15 @@ public class UserFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.NotFound);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync($"{{\"error\":{EscapeJson(message)}}}");
         return response;
     }
 
     private static string EscapeJson(string value)
-        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        => JsonSerializer.Serialize(value);
 
     private static string JsonStringOrNull(string? value)
-        => value is null ? "null" : $"\"{EscapeJson(value)}\"";
+        => value is null ? "null" : EscapeJson(value);
 
     private static string HashPassword(string password)
     {
