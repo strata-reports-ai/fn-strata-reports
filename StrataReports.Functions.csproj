@@ -33,6 +33,10 @@
     <!-- JWT / token validation -->
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.4.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.4.0" />
+    <!-- CSV parsing -->
+    <PackageReference Include="CsvHelper" Version="33.0.1" />
+    <!-- Blob storage -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
   </ItemGroup>
 
 </Project>
