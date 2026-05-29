@@ -14,8 +14,16 @@ if [ -n "$ISSUE_N" ]; then
     --repo strata-reports-ai/orchestrator-strata-reports \
     --json labels --jq '[.labels[].name]' 2>/dev/null || echo "[]")
   if echo "$CURRENT_LABELS" | grep -q '"code-review"'; then
-    echo "Issue #$ISSUE_N already in code-review — skipping duplicate dispatch"
-    exit 0
+    active_review=$(gh run list \
+      --repo "${PR_REPO}" \
+      --workflow=code-review.yml \
+      --status in_progress \
+      --json status --jq 'length' 2>/dev/null || echo "0")
+    if [ "${active_review:-0}" -gt 0 ]; then
+      echo "Issue #$ISSUE_N already in code-review with active run — skipping duplicate dispatch"
+      exit 0
+    fi
+    echo "Issue #$ISSUE_N in code-review but no active run — re-triggering review"
   fi
   GH_TOKEN="$GH_DISPATCH_TOKEN" gh issue edit "$ISSUE_N" \
     --repo strata-reports-ai/orchestrator-strata-reports \
