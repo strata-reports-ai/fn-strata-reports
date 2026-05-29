@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -18,6 +20,12 @@ public class PropertiesFunction(
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         TimeSpan.FromMilliseconds(100));
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
     [Function("PropertiesCreate")]
     public async Task<HttpResponseData> Create(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "properties")] HttpRequestData req,
@@ -32,7 +40,7 @@ public class PropertiesFunction(
 
         PropertyRequest? body = await req.ReadFromJsonAsync<PropertyRequest>(ct);
 
-        HttpResponseData? validationError = ValidatePropertyRequest(req, body);
+        HttpResponseData? validationError = await ValidatePropertyRequest(req, body);
         if (validationError is not null)
             return validationError;
 
@@ -78,7 +86,7 @@ public class PropertiesFunction(
 
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Created);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(SerializeProperty(property));
+        await response.WriteStringAsync(JsonSerializer.Serialize(ToDto(property), JsonOptions));
         return response;
     }
 
@@ -103,7 +111,7 @@ public class PropertiesFunction(
 
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(SerializeProperty(property));
+        await response.WriteStringAsync(JsonSerializer.Serialize(ToDto(property), JsonOptions));
         return response;
     }
 
@@ -125,7 +133,7 @@ public class PropertiesFunction(
 
         PropertyRequest? body = await req.ReadFromJsonAsync<PropertyRequest>(ct);
 
-        HttpResponseData? validationError = ValidatePropertyRequest(req, body);
+        HttpResponseData? validationError = await ValidatePropertyRequest(req, body);
         if (validationError is not null)
             return validationError;
 
@@ -169,7 +177,7 @@ public class PropertiesFunction(
 
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(SerializeProperty(property));
+        await response.WriteStringAsync(JsonSerializer.Serialize(ToDto(property), JsonOptions));
         return response;
     }
 
@@ -218,10 +226,10 @@ public class PropertiesFunction(
         return req.CreateResponse(HttpStatusCode.NoContent);
     }
 
-    private HttpResponseData? ValidatePropertyRequest(HttpRequestData req, PropertyRequest? body)
+    private async Task<HttpResponseData?> ValidatePropertyRequest(HttpRequestData req, PropertyRequest? body)
     {
         if (body is null)
-            return ProblemDetailsSync(req, HttpStatusCode.BadRequest, "Request body is required.", "name", "Request body is required.");
+            return await ValidationProblemDetails(req, new List<ValidationError> { new("name", "Request body is required.") });
 
         List<ValidationError> errors = new();
 
@@ -238,36 +246,25 @@ public class PropertiesFunction(
             errors.Add(new ValidationError("managementStartDate", "Management start date must not be in the future."));
 
         if (errors.Count > 0)
-            return ValidationProblemDetailsSync(req, errors);
+            return await ValidationProblemDetails(req, errors);
 
         return null;
     }
 
-    private static HttpResponseData ProblemDetailsSync(HttpRequestData req, HttpStatusCode status, string detail, string field, string message)
-    {
-        HttpResponseData response = req.CreateResponse(status);
-        response.Headers.Add("Content-Type", "application/problem+json");
-        int statusCode = (int)status;
-        response.WriteString(
-            $"{{\"type\":\"about:blank\",\"title\":\"{EscapeJson(status.ToString())}\",\"status\":{statusCode},\"detail\":\"{EscapeJson(detail)}\"}}");
-        return response;
-    }
-
-    private static HttpResponseData ValidationProblemDetailsSync(HttpRequestData req, List<ValidationError> errors)
+    private static async Task<HttpResponseData> ValidationProblemDetails(HttpRequestData req, List<ValidationError> errors)
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.BadRequest);
         response.Headers.Add("Content-Type", "application/problem+json");
-        System.Text.StringBuilder sb = new();
-        sb.Append("{\"type\":\"about:blank\",\"title\":\"Validation failed\",\"status\":400,\"detail\":\"One or more validation errors occurred.\",\"errors\":{");
-        bool first = true;
-        foreach (ValidationError error in errors)
+        Dictionary<string, string[]> errorDict = errors.ToDictionary(e => e.Field, e => new[] { e.Message });
+        object payload = new
         {
-            if (!first) sb.Append(',');
-            sb.Append($"\"{EscapeJson(error.Field)}\":[\"{EscapeJson(error.Message)}\"]");
-            first = false;
-        }
-        sb.Append("}}");
-        response.WriteString(sb.ToString());
+            type = "about:blank",
+            title = "Validation failed",
+            status = 400,
+            detail = "One or more validation errors occurred.",
+            errors = errorDict,
+        };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
         return response;
     }
 
@@ -275,9 +272,14 @@ public class PropertiesFunction(
     {
         HttpResponseData response = req.CreateResponse(status);
         response.Headers.Add("Content-Type", "application/problem+json");
-        int statusCode = (int)status;
-        await response.WriteStringAsync(
-            $"{{\"type\":\"about:blank\",\"title\":\"{EscapeJson(status.ToString())}\",\"status\":{statusCode},\"detail\":\"{EscapeJson(detail)}\"}}");
+        object payload = new
+        {
+            type = "about:blank",
+            title = status.ToString(),
+            status = (int)status,
+            detail,
+        };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
         return response;
     }
 
@@ -285,43 +287,28 @@ public class PropertiesFunction(
     {
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
         response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync($"{{\"error\":\"{EscapeJson(message)}\"}}");
+        await response.WriteStringAsync(JsonSerializer.Serialize(new { error = message }, JsonOptions));
         return response;
     }
 
-    private static string SerializeProperty(Property p)
-    {
-        System.Text.StringBuilder sb = new();
-        sb.Append('{');
-        sb.Append($"\"id\":\"{p.Id}\",");
-        sb.Append($"\"tenantId\":\"{p.TenantId}\",");
-        sb.Append($"\"name\":\"{EscapeJson(p.Name)}\",");
-        sb.Append($"\"addressLine1\":{JsonStringOrNull(p.AddressLine1)},");
-        sb.Append($"\"city\":{JsonStringOrNull(p.City)},");
-        sb.Append($"\"state\":{JsonStringOrNull(p.State)},");
-        sb.Append($"\"postalCode\":{JsonStringOrNull(p.PostalCode)},");
-        sb.Append($"\"countryCode\":\"{EscapeJson(p.CountryCode)}\",");
-        sb.Append($"\"units\":{p.Units},");
-        sb.Append($"\"ownerName\":{JsonStringOrNull(p.OwnerName)},");
-        sb.Append($"\"ownerEmail\":{JsonStringOrNull(p.OwnerEmail)},");
-        sb.Append($"\"managementStartDate\":{JsonDateOrNull(p.ManagementStartDate)},");
-        sb.Append($"\"timezone\":\"{EscapeJson(p.Timezone)}\",");
-        sb.Append($"\"currencyCode\":\"{EscapeJson(p.CurrencyCode)}\",");
-        sb.Append($"\"notes\":{JsonStringOrNull(p.Notes)},");
-        sb.Append($"\"createdAt\":\"{p.CreatedAt:O}\",");
-        sb.Append($"\"updatedAt\":\"{p.UpdatedAt:O}\"");
-        sb.Append('}');
-        return sb.ToString();
-    }
-
-    private static string EscapeJson(string value)
-        => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-    private static string JsonStringOrNull(string? value)
-        => value is null ? "null" : $"\"{EscapeJson(value)}\"";
-
-    private static string JsonDateOrNull(DateOnly? value)
-        => value is null ? "null" : $"\"{value:yyyy-MM-dd}\"";
+    private static PropertyDto ToDto(Property p) => new(
+        p.Id,
+        p.TenantId,
+        p.Name,
+        p.AddressLine1,
+        p.City,
+        p.State,
+        p.PostalCode,
+        p.CountryCode,
+        p.Units,
+        p.OwnerName,
+        p.OwnerEmail,
+        p.ManagementStartDate,
+        p.Timezone,
+        p.CurrencyCode,
+        p.Notes,
+        p.CreatedAt,
+        p.UpdatedAt);
 
     private static bool TryGetTenantId(FunctionContext context, out Guid tenantId)
     {
@@ -382,6 +369,25 @@ public class PropertiesFunction(
         string? Timezone,
         string? CurrencyCode,
         string? Notes);
+
+    private sealed record PropertyDto(
+        Guid Id,
+        Guid TenantId,
+        string Name,
+        string? AddressLine1,
+        string? City,
+        string? State,
+        string? PostalCode,
+        string CountryCode,
+        int Units,
+        string? OwnerName,
+        string? OwnerEmail,
+        DateOnly? ManagementStartDate,
+        string Timezone,
+        string CurrencyCode,
+        string? Notes,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset UpdatedAt);
 
     private sealed record ValidationError(string Field, string Message);
 }
