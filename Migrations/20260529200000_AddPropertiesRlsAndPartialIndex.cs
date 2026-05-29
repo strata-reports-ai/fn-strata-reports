@@ -11,7 +11,7 @@ namespace StrataReports.Functions.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(
-                "CREATE INDEX IF NOT EXISTS idx_properties_tenant_active ON \"Properties\" (tenant_id, deleted_at) WHERE deleted_at IS NULL;");
+                "CREATE INDEX IF NOT EXISTS idx_properties_tenant_active ON \"Properties\" (\"TenantId\", \"DeletedAt\") WHERE \"DeletedAt\" IS NULL;");
 
             migrationBuilder.Sql("ALTER TABLE \"Properties\" ENABLE ROW LEVEL SECURITY;");
 
@@ -25,7 +25,7 @@ namespace StrataReports.Functions.Migrations
                         WHERE tablename = 'Properties' AND policyname = 'tenant_isolation'
                     ) THEN
                         CREATE POLICY tenant_isolation ON ""Properties""
-                            USING (tenant_id::text = current_setting('app.current_tenant_id', true));
+                            USING (""TenantId""::text = current_setting('app.current_tenant_id', true));
                     END IF;
                 END
                 $$;");
