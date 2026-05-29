@@ -9,6 +9,10 @@ namespace StrataReports.Functions.Middleware;
 
 public class RateLimitMiddleware(ILogger<RateLimitMiddleware> logger) : IFunctionsWorkerMiddleware
 {
+    // WARNING: _entries is process-local. On multi-instance Azure Functions deployments each
+    // instance maintains independent state, so the effective per-IP limit is MaxAttempts * N
+    // instances. Replace with a distributed store (e.g. Redis via Azure Cache) for
+    // production-strength rate limiting across all instances.
     private static readonly ConcurrentDictionary<string, IpRateEntry> _entries = new();
 
     private const int MaxAttempts = 10;
@@ -64,6 +68,17 @@ public class RateLimitMiddleware(ILogger<RateLimitMiddleware> logger) : IFunctio
 
     private static string GetClientIp(HttpRequestData request)
     {
+        // X-Azure-ClientIP is set by Azure Front Door / APIM and cannot be spoofed by clients.
+        // Prefer this over X-Forwarded-For which is attacker-controlled.
+        if (request.Headers.TryGetValues("X-Azure-ClientIP", out IEnumerable<string>? azureIp))
+        {
+            string? ip = azureIp.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(ip))
+                return ip.Trim();
+        }
+
+        // Fallback: X-Forwarded-For is not trusted for security decisions because clients
+        // can set arbitrary values. Only use it as a last resort for non-security purposes.
         if (request.Headers.TryGetValues("X-Forwarded-For", out IEnumerable<string>? forwarded))
         {
             string? first = forwarded.FirstOrDefault();

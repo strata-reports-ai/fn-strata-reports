@@ -100,7 +100,11 @@ public class AuthFunction(
         AppUser? user = await db.Users.FirstOrDefaultAsync(
             u => u.Email == body.Email.ToLowerInvariant(), ct);
 
-        if (user is null || string.IsNullOrEmpty(user.PasswordHash) || !VerifyPassword(body.Password, user.PasswordHash))
+        // Always run VerifyPassword (even when user is null) to prevent timing-based user enumeration.
+        string hashToVerify = user?.PasswordHash ?? DummyPasswordHash;
+        bool passwordValid = VerifyPassword(body.Password, hashToVerify);
+
+        if (user is null || string.IsNullOrEmpty(user.PasswordHash) || !passwordValid)
         {
             await WriteAuditLog(db, null, null, "login_failed", GetClientIp(req), GetUserAgent(req), ct);
             return await Unauthorized(req, "Invalid email or password.");
@@ -329,6 +333,17 @@ public class AuthFunction(
 
     private static string GetClientIp(HttpRequestData req)
     {
+        // X-Azure-ClientIP is set by Azure Front Door / APIM and cannot be spoofed by clients.
+        // Prefer this over X-Forwarded-For which is attacker-controlled.
+        if (req.Headers.TryGetValues("X-Azure-ClientIP", out IEnumerable<string>? azureIp))
+        {
+            string? ip = azureIp.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(ip))
+                return ip.Trim();
+        }
+
+        // Fallback: X-Forwarded-For is not trusted for security decisions because clients
+        // can set arbitrary values. Only use it as a last resort for audit logging.
         if (req.Headers.TryGetValues("X-Forwarded-For", out IEnumerable<string>? values))
         {
             string? first = values.FirstOrDefault();
@@ -411,6 +426,12 @@ public class AuthFunction(
 
         return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
     }
+
+    // A pre-computed PBKDF2 hash used when the user does not exist, so that the
+    // password verification step always runs and response time is constant regardless
+    // of whether the email is registered (prevents timing-based user enumeration).
+    private const string DummyPasswordHash =
+        "AAAAAAAAAAAAAAAAAAAAAA==:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
     private static string GenerateSecureToken()
     {
