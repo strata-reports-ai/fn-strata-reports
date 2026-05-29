@@ -26,20 +26,20 @@ public class BillingWebhookFunction(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "billing/webhook")] HttpRequestData req,
         CancellationToken ct)
     {
-        string? webhookSecret = configuration["Stripe__WebhookSecret"];
-
-        if (string.IsNullOrEmpty(webhookSecret))
-        {
-            logger.LogError("Stripe__WebhookSecret is not configured");
-            return req.CreateResponse(HttpStatusCode.InternalServerError);
-        }
-
         string body = await new StreamReader(req.Body).ReadToEndAsync(ct);
 
         if (!req.Headers.TryGetValues("Stripe-Signature", out IEnumerable<string>? sigValues))
         {
             logger.LogWarning("Stripe webhook received without Stripe-Signature header");
             return await BadRequest(req, "Missing Stripe-Signature header.");
+        }
+
+        string? webhookSecret = configuration["Stripe__WebhookSecret"];
+
+        if (string.IsNullOrEmpty(webhookSecret))
+        {
+            logger.LogError("Stripe__WebhookSecret is not configured; cannot validate Stripe-Signature");
+            return await BadRequest(req, "Invalid Stripe signature.");
         }
 
         string stripeSignature = sigValues.FirstOrDefault() ?? string.Empty;
