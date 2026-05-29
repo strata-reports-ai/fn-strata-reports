@@ -119,11 +119,8 @@ STEP 4 — If NO major or moderate issues found:
     gh pr comment ${PR_NUMBER} --repo ${PR_REPO} --body "## Merge blocked: conflict with main
 
 The code review passed ✅, but branch \`${HEAD_BRANCH}\` has a merge conflict with main and cannot be merged automatically. The orchestrator will dispatch a rebase agent on the next cycle."
-    ISSUE_N=\$(gh pr view ${PR_NUMBER} --repo ${PR_REPO} --json body --jq '.body' | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
-    if [ -n "\$ISSUE_N" ]; then
-      GH_TOKEN="\$GH_DISPATCH_TOKEN" gh issue edit "\$ISSUE_N" --repo strata-reports-ai/orchestrator-strata-reports --remove-label code-review --add-label in-progress 2>/dev/null || true
-    fi
     (then stop — do not run any further commands in STEP 4)
+
 
   If MERGEABLE is not "CONFLICTING", run ALL of these in order:
     gh pr comment ${PR_NUMBER} --repo ${PR_REPO} --body "✅ **Code review passed.** No major or moderate issues found. Merging."
