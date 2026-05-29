@@ -617,12 +617,8 @@ public class CsvProcessFunction(
     private static async Task<byte[]> DownloadBlobAsync(
         string connectionString, string blobPath, CancellationToken ct)
     {
-        int slashIndex = blobPath.IndexOf('/', StringComparison.Ordinal);
-        if (slashIndex < 0)
-            throw new InvalidOperationException($"Invalid blob path (no container separator): {blobPath}");
-
-        string containerName = blobPath[..slashIndex];
-        string blobName = blobPath[(slashIndex + 1)..];
+        const string containerName = "imports";
+        string blobName = blobPath;
 
         BlobContainerClient container = new BlobServiceClient(connectionString)
             .GetBlobContainerClient(containerName);
