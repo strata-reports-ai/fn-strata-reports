@@ -207,6 +207,51 @@ public class AuthFunction(
         return response;
     }
 
+    [Function("AuthResetPassword")]
+    public async Task<HttpResponseData> ResetPassword(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/reset-password")] HttpRequestData req,
+        CancellationToken ct)
+    {
+        ResetPasswordRequest? body = await req.ReadFromJsonAsync<ResetPasswordRequest>(ct);
+        if (body is null || string.IsNullOrWhiteSpace(body.Email))
+            return await BadRequest(req, "Email is required.");
+
+        string normalizedEmail = body.Email.ToLowerInvariant();
+        AppUser? user = await db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
+
+        if (user is not null)
+        {
+            string resetToken = GenerateSecureToken();
+            user.PasswordResetToken = resetToken;
+            user.PasswordResetTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+
+            AuditLog auditEntry = new()
+            {
+                Id = Guid.NewGuid(),
+                TenantId = user.TenantId,
+                UserId = user.Id,
+                Action = "password_reset_requested",
+                IpAddress = GetClientIp(req),
+                UserAgent = GetUserAgent(req),
+                OccurredAt = DateTimeOffset.UtcNow,
+            };
+            db.AuditLogs.Add(auditEntry);
+
+            await db.SaveChangesAsync(ct);
+
+            await emailService.SendPasswordResetEmailAsync(user.Email, resetToken, ct);
+
+            logger.LogInformation("Password reset requested for user {UserId}", user.Id);
+        }
+
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(
+            "{\"message\":\"If that email address is registered, a reset link has been sent.\"}");
+        return response;
+    }
+
     [Function("AuthVerifyEmail")]
     public async Task<HttpResponseData> VerifyEmail(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "auth/verify-email")] HttpRequestData req,
@@ -239,56 +284,6 @@ public class AuthFunction(
         HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync("{\"message\":\"Email verified successfully. You can now log in.\"}");
-        return response;
-    }
-
-    [Function("AuthResetPassword")]
-    public async Task<HttpResponseData> ResetPassword(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/reset-password")] HttpRequestData req,
-        CancellationToken ct)
-    {
-        ResetPasswordRequest? body = await req.ReadFromJsonAsync<ResetPasswordRequest>(ct);
-        if (body is null || string.IsNullOrWhiteSpace(body.Email))
-            return await BadRequest(req, "Email is required.");
-
-        AppUser? user = await db.Users.FirstOrDefaultAsync(
-            u => u.Email == body.Email.ToLowerInvariant(), ct);
-
-        if (user is null)
-        {
-            // Equalise timing with the found-user path to prevent email enumeration.
-            await db.Users.CountAsync(ct);
-        }
-        else
-        {
-            string resetToken = GenerateSecureToken();
-            user.PasswordResetToken = resetToken;
-            user.PasswordResetTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
-            user.UpdatedAt = DateTimeOffset.UtcNow;
-
-            AuditLog auditEntry = new()
-            {
-                Id = Guid.NewGuid(),
-                TenantId = user.TenantId,
-                UserId = user.Id,
-                Action = "password_reset_requested",
-                IpAddress = GetClientIp(req),
-                UserAgent = GetUserAgent(req),
-                OccurredAt = DateTimeOffset.UtcNow,
-            };
-            db.AuditLogs.Add(auditEntry);
-
-            await db.SaveChangesAsync(ct);
-
-            await emailService.SendPasswordResetEmailAsync(user.Email, resetToken, ct);
-
-            logger.LogInformation("Password reset requested for user {UserId}", user.Id);
-        }
-
-        HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
-        response.Headers.Add("Content-Type", "application/json");
-        await response.WriteStringAsync(
-            "{\"message\":\"If that email address is registered, a reset link has been sent.\"}");
         return response;
     }
 
