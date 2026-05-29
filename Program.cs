@@ -24,11 +24,14 @@ builder.Services.AddOpenTelemetry()
     .UseFunctionsWorkerDefaults()
     .UseAzureMonitorExporter();
 
+string connectionString = builder.Configuration["ConnectionStrings:Database"]
+    ?? throw new InvalidOperationException("ConnectionStrings:Database configuration is required");
+
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration["ConnectionStrings:Database"]));
+    options.UseNpgsql(connectionString));
 
 builder.Services.AddSingleton<IDbConnectionFactory>(
-    new NpgsqlConnectionFactory(builder.Configuration["ConnectionStrings:Database"]!));
+    new NpgsqlConnectionFactory(connectionString));
 
 builder.Services.AddSingleton<IJwtService, JwtService>();
 

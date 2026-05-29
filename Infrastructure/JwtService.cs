@@ -16,7 +16,7 @@ public interface IJwtService
 
 public class JwtService(IConfiguration configuration) : IJwtService
 {
-    private readonly string _secret = configuration["JWT_SECRET"]
+    private string Secret => configuration["JWT_SECRET"]
         ?? throw new InvalidOperationException("JWT_SECRET configuration is required");
 
     private static readonly TimeSpan AccessTokenTtl = TimeSpan.FromMinutes(15);
@@ -24,7 +24,7 @@ public class JwtService(IConfiguration configuration) : IJwtService
 
     public string GenerateAccessToken(Guid userId, Guid tenantId, string email, string role)
     {
-        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(_secret));
+        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(Secret));
         SigningCredentials creds = new(key, SecurityAlgorithms.HmacSha256);
 
         Claim[] claims =
@@ -48,7 +48,7 @@ public class JwtService(IConfiguration configuration) : IJwtService
 
     public (string token, Guid jti) GenerateRefreshToken(Guid userId, Guid tenantId)
     {
-        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(_secret));
+        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(Secret));
         SigningCredentials creds = new(key, SecurityAlgorithms.HmacSha256);
 
         Guid jti = Guid.NewGuid();
@@ -84,7 +84,7 @@ public class JwtService(IConfiguration configuration) : IJwtService
 
     private ClaimsPrincipal? ValidateToken(string token, bool requireRefreshType)
     {
-        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(_secret));
+        SymmetricSecurityKey key = new(Encoding.UTF8.GetBytes(Secret));
         JwtSecurityTokenHandler handler = new();
 
         TokenValidationParameters validationParams = new()
