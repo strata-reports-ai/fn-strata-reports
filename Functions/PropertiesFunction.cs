@@ -8,12 +8,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StrataReports.Functions.Infrastructure;
 using StrataReports.Functions.Models;
+using StrataReports.Functions.Services;
 
 namespace StrataReports.Functions.Functions;
 
 public class PropertiesFunction(
     ILogger<PropertiesFunction> logger,
-    AppDbContext db)
+    AppDbContext db,
+    IPlanEnforcementService planEnforcement)
 {
     private static readonly Regex EmailRegex = new(
         @"^[^@\s]+@[^@\s]+\.[^@\s]+$",
@@ -37,6 +39,10 @@ public class PropertiesFunction(
 
         if (!TryGetUserId(context, out Guid userId))
             return await Unauthorized(req, "Authentication required.");
+
+        EnforcementOutcome enforcement = await planEnforcement.CheckPropertyCreateAsync(tenantId, ct);
+        if (enforcement.Result != EnforcementResult.Allowed)
+            return await PaymentRequired(req, enforcement.Type!, enforcement.Detail!, enforcement.PlanLimit);
 
         PropertyRequest? body = await req.ReadFromJsonAsync<PropertyRequest>(ct);
 
@@ -288,6 +294,18 @@ public class PropertiesFunction(
         HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(JsonSerializer.Serialize(new { error = message }, JsonOptions));
+        return response;
+    }
+
+    private static async Task<HttpResponseData> PaymentRequired(
+        HttpRequestData req, string type, string detail, int? planLimit)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.PaymentRequired);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        object payload = planLimit.HasValue
+            ? new { type, detail, planLimit = planLimit.Value }
+            : (object)new { type, detail };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
         return response;
     }
 

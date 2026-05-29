@@ -1,6 +1,9 @@
 using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using StrataReports.Functions.Infrastructure;
@@ -14,8 +17,91 @@ public class ReportsFunction(
     AppDbContext db,
     INarrativeGeneratorService narrativeGenerator,
     IPdfRenderService pdfRenderService,
-    IReportContextBuilder reportContextBuilder)
+    IReportContextBuilder reportContextBuilder,
+    IQueueService queueService,
+    IPlanEnforcementService planEnforcement)
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    [Function("ReportsGenerate")]
+    public async Task<HttpResponseData> Generate(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "reports/generate")] HttpRequestData req,
+        FunctionContext context,
+        CancellationToken ct)
+    {
+        if (!TryGetTenantId(context, out Guid tenantId))
+            return await Unauthorized(req, "Authentication required.");
+
+        if (!TryGetUserId(context, out Guid userId))
+            return await Unauthorized(req, "Authentication required.");
+
+        EnforcementOutcome enforcement = await planEnforcement.CheckReportGenerateAsync(tenantId, ct);
+        if (enforcement.Result != EnforcementResult.Allowed)
+            return await PaymentRequired(req, enforcement.Type!, enforcement.Detail!, enforcement.PlanLimit);
+
+        GenerateReportRequest? body = await req.ReadFromJsonAsync<GenerateReportRequest>(ct);
+        if (body is null)
+            return await BadRequest(req, "Request body is required.");
+
+        if (!Guid.TryParse(body.PropertyId, out Guid propertyId))
+            return await BadRequest(req, "propertyId must be a valid UUID.");
+
+        if (!DateOnly.TryParse(body.PeriodStart, out DateOnly periodStart))
+            return await BadRequest(req, "periodStart must be a valid date (yyyy-MM-dd).");
+
+        if (!DateOnly.TryParse(body.PeriodEnd, out DateOnly periodEnd))
+            return await BadRequest(req, "periodEnd must be a valid date (yyyy-MM-dd).");
+
+        if (periodEnd < periodStart)
+            return await BadRequest(req, "periodEnd must be on or after periodStart.");
+
+        bool propertyExists = await db.Properties
+            .AnyAsync(p => p.Id == propertyId && p.TenantId == tenantId && p.DeletedAt == null, ct);
+        if (!propertyExists)
+            return await NotFound(req, "Property not found.");
+
+        string reportType = body.ReportType ?? "quarterly";
+
+        bool alreadyExists = await db.Reports
+            .AnyAsync(r => r.TenantId == tenantId && r.PropertyId == propertyId
+                && r.ReportType == reportType && r.PeriodStart == periodStart && r.PeriodEnd == periodEnd, ct);
+        if (alreadyExists)
+            return await Conflict(req, "A report for this property and period already exists.");
+
+        Report report = new()
+        {
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            PropertyId = propertyId,
+            ReportType = reportType,
+            PeriodStart = periodStart,
+            PeriodEnd = periodEnd,
+            Status = "queued",
+            GeneratedByUserId = userId,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        db.Reports.Add(report);
+        await db.SaveChangesAsync(ct);
+
+        string message = JsonSerializer.Serialize(new ReportGenerateMessage(report.Id, tenantId, propertyId));
+        await queueService.EnqueueAsync("report-generate", message, ct);
+
+        logger.LogInformation(
+            "Report {ReportId} queued for tenant {TenantId} property {PropertyId}",
+            report.Id, tenantId, propertyId);
+
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.Accepted);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(
+            JsonSerializer.Serialize(new { reportId = report.Id, status = report.Status }, JsonOptions));
+        return response;
+    }
+
     [Function("ReportsGenerateNarrative")]
     public async Task Run(
         [QueueTrigger("report-generate", Connection = "AzureWebJobsStorage")] string messageJson,
@@ -255,4 +341,96 @@ public class ReportsFunction(
         Guid ReportId,
         Guid TenantId,
         Guid PropertyId);
+
+    private sealed record GenerateReportRequest(
+        string? PropertyId,
+        string? PeriodStart,
+        string? PeriodEnd,
+        string? ReportType);
+
+    private static bool TryGetTenantId(FunctionContext context, out Guid tenantId)
+    {
+        tenantId = Guid.Empty;
+        if (!context.Items.TryGetValue("TenantId", out object? obj))
+            return false;
+        if (obj is Guid g)
+        {
+            tenantId = g;
+            return true;
+        }
+        return Guid.TryParse(obj?.ToString(), out tenantId);
+    }
+
+    private static bool TryGetUserId(FunctionContext context, out Guid userId)
+    {
+        userId = Guid.Empty;
+        if (!context.Items.TryGetValue("UserId", out object? obj))
+            return false;
+        return Guid.TryParse(obj?.ToString(), out userId);
+    }
+
+    private static async Task<HttpResponseData> Unauthorized(HttpRequestData req, string message)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.Unauthorized);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync(JsonSerializer.Serialize(new { error = message }, JsonOptions));
+        return response;
+    }
+
+    private static async Task<HttpResponseData> BadRequest(HttpRequestData req, string detail)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.BadRequest);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        object payload = new
+        {
+            type = "about:blank",
+            title = "Bad Request",
+            status = 400,
+            detail,
+        };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
+        return response;
+    }
+
+    private static async Task<HttpResponseData> NotFound(HttpRequestData req, string detail)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.NotFound);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        object payload = new
+        {
+            type = "about:blank",
+            title = "Not Found",
+            status = 404,
+            detail,
+        };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
+        return response;
+    }
+
+    private static async Task<HttpResponseData> Conflict(HttpRequestData req, string detail)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.Conflict);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        object payload = new
+        {
+            type = "about:blank",
+            title = "Conflict",
+            status = 409,
+            detail,
+        };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
+        return response;
+    }
+
+    private static async Task<HttpResponseData> PaymentRequired(
+        HttpRequestData req, string type, string detail, int? planLimit)
+    {
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.PaymentRequired);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        object payload = planLimit.HasValue
+            ? new { type, detail, planLimit = planLimit.Value }
+            : (object)new { type, detail };
+        await response.WriteStringAsync(JsonSerializer.Serialize(payload, JsonOptions));
+        return response;
+    }
 }

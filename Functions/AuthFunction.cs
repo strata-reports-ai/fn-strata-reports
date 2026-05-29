@@ -40,6 +40,9 @@ public class AuthFunction(
         {
             Id = Guid.NewGuid(),
             Name = body.OrganisationName ?? body.Email,
+            Plan = "beta",
+            Status = "active",
+            TrialEndsAt = DateTimeOffset.UtcNow.AddDays(14),
             CreatedAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         };
