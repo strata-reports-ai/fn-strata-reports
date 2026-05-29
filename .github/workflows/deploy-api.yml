@@ -71,12 +71,23 @@ jobs:
       - name: Apply database migrations
         env:
           ConnectionStrings__Database: Host=psql-strata-reports-dev.postgres.database.azure.com;Database=stratareports;Username=stratareportadmin;Password=${{ secrets.POSTGRES_ADMIN_PASSWORD }};SSL Mode=Require
+          PGPASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+          PGHOST: psql-strata-reports-dev.postgres.database.azure.com
+          PGUSER: stratareportadmin
+          PGDATABASE: stratareports
+          PGSSLMODE: require
         run: |
+          sudo apt-get install -y postgresql-client -qq
+          USERS=$(psql -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public' AND table_name='Users'" 2>/dev/null | tr -d ' \n' || echo "0")
+          HIST=$(psql -t -c 'SELECT COUNT(*) FROM "__EFMigrationsHistory"' 2>/dev/null | tr -d ' \n' || echo "0")
+          if [ "$USERS" = "0" ] && [ "$HIST" != "0" ]; then
+            echo "Stale migration history ($HIST entries, no tables) — resetting"
+            psql -c 'DROP TABLE IF EXISTS "__EFMigrationsHistory"'
+          fi
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef database update --project StrataReports.Functions.csproj --verbose
 
-      - name: Trigger test agent
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
