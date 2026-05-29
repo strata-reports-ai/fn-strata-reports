@@ -254,11 +254,16 @@ public class AuthFunction(
         AppUser? user = await db.Users.FirstOrDefaultAsync(
             u => u.Email == body.Email.ToLowerInvariant(), ct);
 
-        if (user is not null)
+        if (user is null)
+        {
+            // Equalise timing with the found-user path to prevent email enumeration.
+            await db.Users.CountAsync(ct);
+        }
+        else
         {
             string resetToken = GenerateSecureToken();
-            user.EmailVerificationToken = resetToken;
-            user.EmailVerificationTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
+            user.PasswordResetToken = resetToken;
+            user.PasswordResetTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
             user.UpdatedAt = DateTimeOffset.UtcNow;
 
             AuditLog auditEntry = new()
