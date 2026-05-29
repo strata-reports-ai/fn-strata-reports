@@ -79,7 +79,7 @@ public class TenantMiddleware(ILogger<TenantMiddleware> logger, AppDbContext db)
     {
         foreach (string route in _unauthenticatedRoutes)
         {
-            if (path.EndsWith(route, StringComparison.OrdinalIgnoreCase))
+            if (path.Equals(route, StringComparison.OrdinalIgnoreCase))
                 return true;
         }
         return false;

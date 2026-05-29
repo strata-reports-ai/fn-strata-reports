@@ -23,6 +23,12 @@ public class RateLimitMiddleware(ILogger<RateLimitMiddleware> logger) : IFunctio
             string ip = GetClientIp(request);
             DateTimeOffset now = DateTimeOffset.UtcNow;
 
+            foreach (string key in _entries.Keys)
+            {
+                if (_entries.TryGetValue(key, out IpRateEntry? stale) && now - stale.WindowStart > Window)
+                    _entries.TryRemove(key, out _);
+            }
+
             IpRateEntry entry = _entries.AddOrUpdate(
                 ip,
                 _ => new IpRateEntry(now, 1),
