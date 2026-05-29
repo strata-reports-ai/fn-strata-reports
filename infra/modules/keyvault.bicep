@@ -1,6 +1,8 @@
 param location string
 param environment string
 param functionsAppPrincipalId string
+@secure()
+param jwtSecret string
 
 var keyVaultName = 'kv-strata-${environment}'
 
@@ -30,6 +32,15 @@ resource functionsKeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignment
   }
 }
 
+resource jwtSecretSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: keyVault
+  name: 'JWT-SECRET'
+  properties: {
+    value: jwtSecret
+  }
+}
+
 output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
 output keyVaultId string = keyVault.id
+output jwtSecretSecretUri string = jwtSecretSecret.properties.secretUri
