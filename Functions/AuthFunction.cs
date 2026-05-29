@@ -207,24 +207,38 @@ public class AuthFunction(
         return response;
     }
 
-    [Function("AuthResetPassword")]
-    public async Task<HttpResponseData> ResetPassword(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/reset-password")] HttpRequestData req,
+    [Function("AuthForgotPassword")]
+    public async Task<HttpResponseData> ForgotPassword(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/forgot-password")] HttpRequestData req,
         CancellationToken ct)
     {
-        ResetPasswordRequest? body = await req.ReadFromJsonAsync<ResetPasswordRequest>(ct);
+        ForgotPasswordRequest? body = await req.ReadFromJsonAsync<ForgotPasswordRequest>(ct);
         if (body is null || string.IsNullOrWhiteSpace(body.Email))
-            return await BadRequest(req, "Email is required.");
+        {
+            HttpResponseData ok200 = req.CreateResponse(HttpStatusCode.OK);
+            ok200.Headers.Add("Content-Type", "application/json");
+            await ok200.WriteStringAsync(
+                "{\"message\":\"If that email address is registered, a reset link has been sent.\"}");
+            return ok200;
+        }
 
         string normalizedEmail = body.Email.ToLowerInvariant();
         AppUser? user = await db.Users.FirstOrDefaultAsync(u => u.Email == normalizedEmail, ct);
 
         if (user is not null)
         {
-            string resetToken = GenerateSecureToken();
-            user.PasswordResetToken = resetToken;
-            user.PasswordResetTokenExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
-            user.UpdatedAt = DateTimeOffset.UtcNow;
+            string plainToken = GenerateSecureToken();
+            string tokenHash = HashToken(plainToken);
+
+            PasswordResetToken resetToken = new()
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                TokenHash = tokenHash,
+                ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            db.PasswordResetTokens.Add(resetToken);
 
             AuditLog auditEntry = new()
             {
@@ -240,7 +254,7 @@ public class AuthFunction(
 
             await db.SaveChangesAsync(ct);
 
-            await emailService.SendPasswordResetEmailAsync(user.Email, resetToken, ct);
+            await emailService.SendPasswordResetEmailAsync(user.Email, plainToken, ct);
 
             logger.LogInformation("Password reset requested for user {UserId}", user.Id);
         }
@@ -249,6 +263,63 @@ public class AuthFunction(
         response.Headers.Add("Content-Type", "application/json");
         await response.WriteStringAsync(
             "{\"message\":\"If that email address is registered, a reset link has been sent.\"}");
+        return response;
+    }
+
+    [Function("AuthResetPassword")]
+    public async Task<HttpResponseData> ResetPassword(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "auth/reset-password")] HttpRequestData req,
+        CancellationToken ct)
+    {
+        ConfirmResetPasswordRequest? body = await req.ReadFromJsonAsync<ConfirmResetPasswordRequest>(ct);
+        if (body is null || string.IsNullOrWhiteSpace(body.Token) || string.IsNullOrWhiteSpace(body.NewPassword))
+            return await ProblemDetails(req, HttpStatusCode.BadRequest, "Token and new password are required.");
+
+        if (body.NewPassword.Length < 12)
+            return await ProblemDetails(req, HttpStatusCode.BadRequest, "Password must be at least 12 characters.");
+
+        string tokenHash = HashToken(body.Token);
+
+        PasswordResetToken? resetToken = await db.PasswordResetTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, ct);
+
+        if (resetToken is null || resetToken.UsedAt is not null)
+            return await ProblemDetails(req, HttpStatusCode.BadRequest, "Invalid or already-used reset token.");
+
+        if (resetToken.ExpiresAt < DateTimeOffset.UtcNow)
+            return await ProblemDetails(req, HttpStatusCode.BadRequest, "Reset token has expired. Please request a new password reset link.");
+
+        AppUser? user = await db.Users.FindAsync([resetToken.UserId], ct);
+        if (user is null)
+            return await ProblemDetails(req, HttpStatusCode.BadRequest, "User not found.");
+
+        resetToken.UsedAt = DateTimeOffset.UtcNow;
+        user.PasswordHash = HashPassword(body.NewPassword);
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = {0} AND revoked_at IS NULL",
+            user.Id);
+
+        AuditLog auditEntry = new()
+        {
+            Id = Guid.NewGuid(),
+            TenantId = user.TenantId,
+            UserId = user.Id,
+            Action = "password_reset_completed",
+            IpAddress = GetClientIp(req),
+            UserAgent = GetUserAgent(req),
+            OccurredAt = DateTimeOffset.UtcNow,
+        };
+        db.AuditLogs.Add(auditEntry);
+
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation("Password reset completed for user {UserId}", user.Id);
+
+        HttpResponseData response = req.CreateResponse(HttpStatusCode.OK);
+        response.Headers.Add("Content-Type", "application/json");
+        await response.WriteStringAsync("{\"message\":\"Password reset successfully. You can now log in.\"}");
         return response;
     }
 
@@ -438,6 +509,16 @@ public class AuthFunction(
         return response;
     }
 
+    private static async Task<HttpResponseData> ProblemDetails(HttpRequestData req, HttpStatusCode status, string detail)
+    {
+        HttpResponseData response = req.CreateResponse(status);
+        response.Headers.Add("Content-Type", "application/problem+json");
+        string statusCode = (int)status + "";
+        await response.WriteStringAsync(
+            $"{{\"type\":\"about:blank\",\"title\":\"{EscapeJson(status.ToString())}\",\"status\":{statusCode},\"detail\":\"{EscapeJson(detail)}\"}}");
+        return response;
+    }
+
     private static string EscapeJson(string value)
         => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
@@ -487,6 +568,12 @@ public class AuthFunction(
             .Replace("=", "");
     }
 
+    private static string HashToken(string token)
+    {
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
     private sealed record RegisterRequest(
         string? Email,
         string? Password,
@@ -495,5 +582,7 @@ public class AuthFunction(
 
     private sealed record LoginRequest(string? Email, string? Password);
 
-    private sealed record ResetPasswordRequest(string? Email);
+    private sealed record ForgotPasswordRequest(string? Email);
+
+    private sealed record ConfirmResetPasswordRequest(string? Token, string? NewPassword);
 }

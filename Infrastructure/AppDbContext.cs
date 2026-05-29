@@ -17,6 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<InspectionRecord> InspectionRecords => Set<InspectionRecord>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,5 +35,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<ReviewRecord>().HasIndex(r => new { r.TenantId, r.PropertyId, r.ReviewDate });
         modelBuilder.Entity<Report>().HasAlternateKey(r => new { r.TenantId, r.PropertyId, r.ReportType, r.PeriodStart, r.PeriodEnd });
         modelBuilder.Entity<Import>().HasIndex(i => new { i.TenantId, i.Status, i.CreatedAt });
+        modelBuilder.Entity<PasswordResetToken>().HasIndex(p => p.UserId);
+        modelBuilder.Entity<PasswordResetToken>().HasIndex(p => p.TokenHash).IsUnique();
     }
 }
