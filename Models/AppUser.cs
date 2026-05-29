@@ -8,6 +8,7 @@ public class AppUser
     public required string Email { get; set; }
     public string? DisplayName { get; set; }
     public string? PasswordHash { get; set; }
+    public string? PendingEmail { get; set; }
     public bool IsEmailVerified { get; set; }
     public string? EmailVerificationToken { get; set; }
     public DateTimeOffset? EmailVerificationTokenExpiresAt { get; set; }

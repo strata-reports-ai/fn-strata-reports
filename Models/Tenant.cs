@@ -8,6 +8,8 @@ public class Tenant
     public string Plan { get; set; } = "beta";
     public string Status { get; set; } = "active";
     public DateTimeOffset? TrialEndsAt { get; set; }
+    public string? DefaultTimezone { get; set; }
+    public string? DefaultCurrency { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
