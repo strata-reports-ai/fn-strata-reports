@@ -27,8 +27,8 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="Dapper" Version="2.1.66" />
     <!-- JWT / token validation -->
-    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.3.2" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.3.2" />
+    <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.4.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.4.0" />
   </ItemGroup>
 
 </Project>
