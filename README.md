@@ -92,6 +92,13 @@ az deployment group show \
   --output tsv
 ```
 
+## Third-party licenses
+
+| Package | License |
+|---------|---------|
+| [QuestPDF](https://www.questpdf.com/) | QuestPDF Community License (MIT) — applicable for organisations with < $1M USD annual gross revenue. See [questpdf.com/license](https://www.questpdf.com/license.html) for full terms. |
+| [ScottPlot](https://scottplot.net/) | MIT License |
+
 ## Local development
 
 ```bash
