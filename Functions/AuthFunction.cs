@@ -97,10 +97,13 @@ public class AuthFunction(
         catch (Exception ex)
         {
             logger.LogError(ex, "DIAGNOSTIC: Register endpoint exception");
+            string diagMsg = ex.GetType().FullName + ": " + ex.Message;
+            string diagInner = ex.InnerException?.Message ?? "none";
+            string diagStack = ex.StackTrace ?? "";
             HttpResponseData errResp = req.CreateResponse(HttpStatusCode.InternalServerError);
             errResp.Headers.Add("Content-Type", "application/json");
             await errResp.WriteStringAsync(
-                $"{{\"diagnostic_error\":{EscapeJson(ex.GetType().FullName + \": \" + ex.Message)},\"inner\":{EscapeJson(ex.InnerException?.Message ?? \"none\")},\"stack\":{EscapeJson(ex.StackTrace ?? \"\")}}}");
+                $"{{\"diagnostic_error\":{EscapeJson(diagMsg)},\"inner\":{EscapeJson(diagInner)},\"stack\":{EscapeJson(diagStack)}}}");
             return errResp;
         }
     }
@@ -175,10 +178,13 @@ public class AuthFunction(
         catch (Exception ex)
         {
             logger.LogError(ex, "DIAGNOSTIC: Login endpoint exception");
+            string diagMsg = ex.GetType().FullName + ": " + ex.Message;
+            string diagInner = ex.InnerException?.Message ?? "none";
+            string diagStack = ex.StackTrace ?? "";
             HttpResponseData errResp = req.CreateResponse(HttpStatusCode.InternalServerError);
             errResp.Headers.Add("Content-Type", "application/json");
             await errResp.WriteStringAsync(
-                $"{{\"diagnostic_error\":{EscapeJson(ex.GetType().FullName + \": \" + ex.Message)},\"inner\":{EscapeJson(ex.InnerException?.Message ?? \"none\")},\"stack\":{EscapeJson(ex.StackTrace ?? \"\")}}}");
+                $"{{\"diagnostic_error\":{EscapeJson(diagMsg)},\"inner\":{EscapeJson(diagInner)},\"stack\":{EscapeJson(diagStack)}}}");
             return errResp;
         }
     }
