@@ -5,6 +5,7 @@ using Microsoft.Azure.Functions.Worker.OpenTelemetry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using Serilog;
 using Stripe;
@@ -80,7 +81,17 @@ var app = builder.Build();
 using (IServiceScope scope = app.Services.CreateScope())
 {
     AppDbContext db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await db.Database.MigrateAsync();
+    Microsoft.Extensions.Logging.ILogger startupLogger =
+        scope.ServiceProvider.GetRequiredService<ILoggerFactory>()
+             .CreateLogger("Startup");
+    try
+    {
+        await db.Database.MigrateAsync();
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogError(ex, "Database migration failed at startup. The host will continue but DB may be unavailable.");
+    }
 }
 
 app.Run();
