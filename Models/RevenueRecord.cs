@@ -19,4 +19,6 @@ public class RevenueRecord
     public string? GuestNameHash { get; set; }
     public string CurrencyCode { get; set; } = "USD";
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 }

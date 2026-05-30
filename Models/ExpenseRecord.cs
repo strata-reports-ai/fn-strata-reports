@@ -14,4 +14,6 @@ public class ExpenseRecord
     public string CurrencyCode { get; set; } = "USD";
     public string? ExternalRef { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 }
