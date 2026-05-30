@@ -110,6 +110,20 @@ jobs:
             echo "Users table missing — dropping migration history to force full replay"
             PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c 'DROP TABLE IF EXISTS "__EFMigrationsHistory"' 2>/dev/null || true
           fi
+
+          # Detect columns that are in migration history but not actually in the DB,
+          # and remove their stale history entries so EF Core re-applies them.
+          echo "=== Checking for stale migration history entries ==="
+          MISSING_PENDING_EMAIL=$(PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -tAc \
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_name='Users' AND column_name='PendingEmail'" 2>/dev/null || echo "0")
+          if [ "${MISSING_PENDING_EMAIL:-0}" = "0" ]; then
+            echo "PendingEmail column missing — removing stale migration history entry to force re-apply"
+            PGPASSWORD="${PGPASSWORD}" psql "$PGCONN" -c \
+              "DELETE FROM \"__EFMigrationsHistory\" WHERE \"MigrationId\" = '20260529190000_AddPendingEmailToAppUser'" 2>/dev/null || true
+          else
+            echo "PendingEmail column present — no remediation needed"
+          fi
+
           dotnet tool install --global dotnet-ef
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef database update --project StrataReports.Functions.csproj --verbose
