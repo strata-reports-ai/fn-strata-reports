@@ -5,6 +5,19 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch/ref to deploy'
+        required: false
+        default: 'main'
+      pr_number:
+        description: 'PR number to merge after tests pass'
+        required: false
+        default: ''
+      orchestrator_issue:
+        description: 'Orchestrator issue number'
+        required: false
+        default: ''
 
 concurrency:
   group: deploy-api-main
@@ -16,6 +29,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref_name }}
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -93,21 +108,33 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_ORCHESTRATOR_ISSUE: ${{ inputs.orchestrator_issue }}
         run: |
-          PR_NUMBER=$(gh pr list --repo strata-reports-ai/fn-strata-reports \
-            --base main --state merged --limit 5 \
-            --json number,mergeCommit \
-            --jq "[.[] | select(.mergeCommit.oid == \"${{ github.sha }}\")] | .[0].number // empty" \
-            2>/dev/null || true)
-          if [ -z "$PR_NUMBER" ]; then
-            echo "No merged PR found for this push — skipping test agent"
-            exit 0
+          if [ -n "$INPUT_PR_NUMBER" ]; then
+            PR_NUMBER="$INPUT_PR_NUMBER"
+            ORCHESTRATOR_ISSUE="$INPUT_ORCHESTRATOR_ISSUE"
+            MERGE_AFTER_TEST="true"
+          else
+            PR_NUMBER=$(gh pr list --repo strata-reports-ai/fn-strata-reports \
+              --base main --state merged --limit 5 \
+              --json number,mergeCommit \
+              --jq "[.[] | select(.mergeCommit.oid == \"${{ github.sha }}\")] | .[0].number // empty" \
+              2>/dev/null || true)
+            if [ -z "$PR_NUMBER" ]; then
+              echo "No merged PR found for this push — skipping test agent"
+              exit 0
+            fi
+            ORCHESTRATOR_ISSUE=$(gh pr view "$PR_NUMBER" --repo strata-reports-ai/fn-strata-reports \
+              --json body --jq '.body' \
+              | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
+            MERGE_AFTER_TEST="false"
           fi
-          ORCHESTRATOR_ISSUE=$(gh pr view "$PR_NUMBER" --repo strata-reports-ai/fn-strata-reports \
-            --json body --jq '.body' \
-            | grep -oP 'orchestrator-strata-reports#\K[0-9]+' | head -1 || true)
-          jq -n --arg pr "$PR_NUMBER" --arg issue "${ORCHESTRATOR_ISSUE:-}" \
-            '{"ref":"main","inputs":{"pr_numbers":$pr,"target_repo":"fn-strata-reports","orchestrator_issues":$issue}}' | \
+          jq -n \
+            --arg pr "$PR_NUMBER" \
+            --arg issue "${ORCHESTRATOR_ISSUE:-}" \
+            --arg merge "$MERGE_AFTER_TEST" \
+            '{"ref":"main","inputs":{"pr_numbers":$pr,"target_repo":"fn-strata-reports","orchestrator_issues":$issue,"merge_after_test":$merge}}' | \
           gh api repos/strata-reports-ai/fn-strata-reports/actions/workflows/test-agent.yml/dispatches \
             --method POST --input -
-          echo "Triggered test agent for PR #$PR_NUMBER (issue: ${ORCHESTRATOR_ISSUE:-none})"
+          echo "Triggered test agent for PR #$PR_NUMBER (merge_after_test=$MERGE_AFTER_TEST)"
