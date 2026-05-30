@@ -98,8 +98,8 @@ jobs:
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           BRANCH: ${{ github.event.inputs.branch || 'main' }}
           PROMPT: ${{ github.event.inputs.prompt || '' }}
+          STEP_OUTPUT: ${{ steps.claude.outputs.output }}
         run: |
-          STEP_OUTPUT="${{ steps.claude.outputs.output }}"
           if echo "$PROMPT" | grep -qF "You are a code reviewer"; then
             echo "Code review agent failure — skipping retry logic"
             exit 0
@@ -153,6 +153,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           PROMPT: ${{ github.event.inputs.prompt || '' }}
+          STEP_OUTPUT: ${{ steps.claude.outputs.output }}
         run: |
           if echo "$PROMPT" | grep -qF "You are a code reviewer"; then
             exit 0
