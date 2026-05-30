@@ -114,6 +114,64 @@ jobs:
           export PATH="$PATH:$HOME/.dotnet/tools"
           dotnet ef database update --project StrataReports.Functions.csproj --verbose
 
+      - name: Restart Function App and verify DB connectivity
+        env:
+          PGPASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          echo "Restarting Function App..."
+          az functionapp restart --resource-group rg-strata-reports-dev --name fn-strata-reports
+          echo "Waiting 30s for restart..."
+          sleep 30
+
+          echo "=== PostgreSQL firewall rules ==="
+          az postgres flexible-server firewall-rule list --resource-group rg-strata-reports-dev --name psql-strata-reports-dev --output table
+
+          echo "=== Function App outbound IPs ==="
+          az functionapp show --resource-group rg-strata-reports-dev --name fn-strata-reports \
+            --query "{outboundIps:outboundIpAddresses}" --output json
+
+          echo "=== Testing auth endpoint ==="
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -m 15 -o /tmp/auth-test.txt -w "%{http_code}" \
+              -X POST "https://fn-strata-reports.azurewebsites.net/api/auth/login" \
+              -H "Content-Type: application/json" \
+              -d '{"email":"deploy-test@example.com","password":"Test1234!"}')
+            BODY=$(cat /tmp/auth-test.txt)
+            echo "Attempt $i: HTTP $STATUS — $BODY"
+            if [ "$STATUS" != "500" ]; then
+              echo "Auth endpoint healthy (HTTP $STATUS)"
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$STATUS" = "500" ]; then
+            echo "ERROR: Auth still returning 500 after restart"
+            echo "Adding Function App outbound IPs to PostgreSQL firewall..."
+            OUTBOUND_IPS=$(az functionapp show --resource-group rg-strata-reports-dev --name fn-strata-reports \
+              --query "outboundIpAddresses" -o tsv)
+            echo "Outbound IPs: $OUTBOUND_IPS"
+            IFS=',' read -ra IPS <<< "$OUTBOUND_IPS"
+            for i in "${!IPS[@]}"; do
+              IP="${IPS[$i]}"
+              echo "Adding firewall rule for IP: $IP"
+              az postgres flexible-server firewall-rule create \
+                --resource-group rg-strata-reports-dev \
+                --name psql-strata-reports-dev \
+                --rule-name "FnApp-outbound-$i" \
+                --start-ip-address "$IP" \
+                --end-ip-address "$IP" 2>&1 || true
+            done
+            echo "Restarting again after adding IP rules..."
+            az functionapp restart --resource-group rg-strata-reports-dev --name fn-strata-reports
+            sleep 30
+            STATUS2=$(curl -s -m 15 -o /tmp/auth-test2.txt -w "%{http_code}" \
+              -X POST "https://fn-strata-reports.azurewebsites.net/api/auth/login" \
+              -H "Content-Type: application/json" \
+              -d '{"email":"deploy-test@example.com","password":"Test1234!"}')
+            echo "After IP rules: HTTP $STATUS2 — $(cat /tmp/auth-test2.txt)"
+          fi
+
       - name: Trigger test agent
         env:
           GH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
