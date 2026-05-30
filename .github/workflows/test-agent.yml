@@ -68,8 +68,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           ISSUE_NUMBERS: ${{ inputs.orchestrator_issues }}
+          STEP_OUTPUT: ${{ steps.claude.outputs.output }}
         run: |
-          STEP_OUTPUT="${{ steps.claude.outputs.output }}"
           if ! echo "$STEP_OUTPUT" | grep -q "Spending cap reached"; then exit 0; fi
           [ -z "$ISSUE_NUMBERS" ] && exit 0
           RESET_STR=$(echo "$STEP_OUTPUT" | grep -oP 'Spending cap reached resets \K[^\n]+' | head -1)
