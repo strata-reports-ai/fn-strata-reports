@@ -17,6 +17,11 @@ on:
         required: false
         type: string
         default: ''
+      merge_after_test:
+        description: 'Merge the PR after tests pass (true/false)'
+        required: false
+        type: string
+        default: 'false'
 
 jobs:
   test:
@@ -38,6 +43,7 @@ jobs:
           PR_NUMBERS: ${{ inputs.pr_numbers }}
           REPO: ${{ inputs.target_repo }}
           ISSUE_NUMBERS: ${{ inputs.orchestrator_issues }}
+          MERGE_AFTER_TEST: ${{ inputs.merge_after_test }}
         run: |
           python3 scripts/build-test-prompt.py
           {
