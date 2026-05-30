@@ -32,6 +32,8 @@ public class AuthFunction(
         if (body.Password.Length < 8)
             return await BadRequest(req, "Password must be at least 8 characters.");
 
+        try
+        {
         bool emailExists = await db.Users.AnyAsync(u => u.Email == body.Email.ToLowerInvariant(), ct);
         if (emailExists)
             return await BadRequest(req, "An account with this email already exists.");
@@ -91,6 +93,16 @@ public class AuthFunction(
         await response.WriteStringAsync(
             $"{{\"message\":\"Registration successful. Please verify your email.\",\"redirectTo\":\"/onboarding/welcome\"}}");
         return response;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DIAGNOSTIC: Register endpoint exception");
+            HttpResponseData errResp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            errResp.Headers.Add("Content-Type", "application/json");
+            await errResp.WriteStringAsync(
+                $"{{\"diagnostic_error\":{EscapeJson(ex.GetType().FullName + \": \" + ex.Message)},\"inner\":{EscapeJson(ex.InnerException?.Message ?? \"none\")},\"stack\":{EscapeJson(ex.StackTrace ?? \"\")}}}");
+            return errResp;
+        }
     }
 
     [Function("AuthLogin")]
@@ -102,6 +114,8 @@ public class AuthFunction(
         if (body is null || string.IsNullOrWhiteSpace(body.Email) || string.IsNullOrWhiteSpace(body.Password))
             return await BadRequest(req, "Email and password are required.");
 
+        try
+        {
         AppUser? user = await db.Users.FirstOrDefaultAsync(
             u => u.Email == body.Email.ToLowerInvariant(), ct);
 
@@ -157,6 +171,16 @@ public class AuthFunction(
         await response.WriteStringAsync(
             $"{{\"message\":\"Login successful.\",\"redirectTo\":\"/onboarding/welcome\"}}");
         return response;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DIAGNOSTIC: Login endpoint exception");
+            HttpResponseData errResp = req.CreateResponse(HttpStatusCode.InternalServerError);
+            errResp.Headers.Add("Content-Type", "application/json");
+            await errResp.WriteStringAsync(
+                $"{{\"diagnostic_error\":{EscapeJson(ex.GetType().FullName + \": \" + ex.Message)},\"inner\":{EscapeJson(ex.InnerException?.Message ?? \"none\")},\"stack\":{EscapeJson(ex.StackTrace ?? \"\")}}}");
+            return errResp;
+        }
     }
 
     [Function("AuthLogout")]
