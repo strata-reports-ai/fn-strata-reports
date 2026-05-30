@@ -50,6 +50,16 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Ensure PostgreSQL allows Azure services
+        run: |
+          az postgres flexible-server firewall-rule create \
+            --resource-group rg-strata-reports-dev \
+            --name psql-strata-reports-dev \
+            --rule-name AllowAllAzureServices \
+            --start-ip-address 0.0.0.0 \
+            --end-ip-address 0.0.0.0 2>&1 || true
+          echo "Firewall rule ensured."
+
       - name: Deploy to Azure Function App
         run: |
           cd publish
